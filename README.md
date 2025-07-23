@@ -40,7 +40,12 @@ unix-socket-bridge/
 
 ### Quick Setup
 
-1. **Install the n8n node:**
+1. **Install the n8n node from npm (Recommended):**
+```bash
+npm install -g @tehw0lf/n8n-nodes-unix-socket-bridge
+```
+
+**Alternative - Install from source:**
 ```bash
 cd n8n-node
 npm install
@@ -48,6 +53,27 @@ npm run build
 npm pack
 npm install -g ./n8n-nodes-unix-socket-bridge-1.0.0.tgz
 ```
+
+**⚠️ Important: Configure n8n to recognize the custom node**
+
+After installation, you **must** set these environment variables for n8n to pick up the custom node:
+
+```bash
+# Find your installation path
+npm list -g @tehw0lf/n8n-nodes-unix-socket-bridge
+
+# Set required environment variables
+# Path to your custom node installation
+export N8N_CUSTOM_EXTENSIONS=/home/user/.nvm/versions/node/v20.0.0/lib/node_modules/@tehw0lf/n8n-nodes-unix-socket-bridge
+
+# Ensure n8n reinstalls missing packages (recommended for custom nodes)
+export N8N_REINSTALL_MISSING_PACKAGES=true
+
+# For multiple custom nodes, separate with colons
+# export N8N_CUSTOM_EXTENSIONS=/path/to/node1:/path/to/node2
+```
+
+Add these environment variables to your shell profile (`.bashrc`, `.zshrc`, etc.) or your n8n startup script to make them persistent.
 
 2. **Install server components:**
 ```bash
@@ -183,7 +209,7 @@ python3 /usr/local/bin/unix-socket-client /tmp/socket.sock ping
 
 | Issue | Solution |
 |-------|----------|
-| Node not appearing in n8n | Check n8n logs: `sudo journalctl -u n8n -f` |
+| Node not appearing in n8n | 1. Check `N8N_CUSTOM_EXTENSIONS` environment variable is set<br>2. Check n8n logs: `sudo journalctl -u n8n -f`<br>3. Verify node installation: `npm list -g @tehw0lf/n8n-nodes-unix-socket-bridge` |
 | Auto-discovery not working | Verify server is running and socket path is correct |
 | Socket connection errors | Check file permissions and server status |
 | Command execution failures | Validate parameters and check server logs |
@@ -198,7 +224,11 @@ ps aux | grep socket-server
 python3 /usr/local/bin/unix-socket-client /tmp/socket.sock introspect
 
 # Check n8n node installation
-npm list -g | grep unix-socket-bridge
+npm list -g @tehw0lf/n8n-nodes-unix-socket-bridge
+
+# Verify environment variables are set
+echo "N8N_CUSTOM_EXTENSIONS: $N8N_CUSTOM_EXTENSIONS"
+echo "N8N_REINSTALL_MISSING_PACKAGES: $N8N_REINSTALL_MISSING_PACKAGES"
 ```
 
 ## 📚 API Reference

@@ -6,22 +6,40 @@ An n8n community node that enables generic Unix domain socket communication with
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-### Global Installation
-
-To install globally, run the following in your n8n installation directory:
-
+### Install the n8n node from npm (Recommended)
 ```bash
 npm install -g @tehw0lf/n8n-nodes-unix-socket-bridge
 ```
 
+### Alternative - Install from source
+```bash
+cd n8n-node
+npm install
+npm run build
+npm pack
+npm install -g ./n8n-nodes-unix-socket-bridge-1.0.0.tgz
+```
 
-### Local Installation
+### ⚠️ Important: Configure n8n Environment Variables
 
-To install locally, run the following in your n8n installation directory:
+After installation, you **must** set these environment variables for n8n to recognize the custom node:
 
 ```bash
-npm install @tehw0lf/n8n-nodes-unix-socket-bridge
+# Find your installation path
+npm list -g @tehw0lf/n8n-nodes-unix-socket-bridge
+
+# Set required environment variables
+# Path to your custom node installation
+export N8N_CUSTOM_EXTENSIONS=/home/user/.nvm/versions/node/v20.0.0/lib/node_modules/@tehw0lf/n8n-nodes-unix-socket-bridge
+
+# Ensure n8n reinstalls missing packages (recommended for custom nodes)
+export N8N_REINSTALL_MISSING_PACKAGES=true
+
+# For multiple custom nodes, separate with colons
+# export N8N_CUSTOM_EXTENSIONS=/path/to/node1:/path/to/node2
 ```
+
+Add these environment variables to your shell profile (`.bashrc`, `.zshrc`, etc.) or your n8n startup script to make them persistent.
 
 ## Operations
 
@@ -144,6 +162,38 @@ For complete server setup and configuration examples, see the [main repository](
 - [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
 - [GitHub Repository](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge)
 - [Configuration Examples](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge/tree/main/examples)
+
+## Troubleshooting
+
+### Node Not Appearing in n8n
+
+1. **Check environment variables are set:**
+```bash
+echo "N8N_CUSTOM_EXTENSIONS: $N8N_CUSTOM_EXTENSIONS"
+echo "N8N_REINSTALL_MISSING_PACKAGES: $N8N_REINSTALL_MISSING_PACKAGES"
+```
+
+2. **Verify the node is installed:**
+```bash
+npm list -g @tehw0lf/n8n-nodes-unix-socket-bridge
+```
+
+3. **Check n8n logs for errors:**
+```bash
+# For systemd installations
+sudo journalctl -u n8n -f
+
+# For Docker installations
+docker logs n8n-container-name
+```
+
+4. **Restart n8n after installation.**
+
+### Socket Connection Issues
+
+- Verify the socket server is running
+- Check socket file permissions
+- Ensure the socket path is correct in both server config and n8n node
 
 ## License
 
