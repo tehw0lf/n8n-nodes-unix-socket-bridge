@@ -1,0 +1,30 @@
+{
+  "name": "System Control Bridge",
+  "description": "Safe system control commands",
+  "version": "1.0.0",
+  "socket_path": "/tmp/system-control.sock",
+  "socket_permissions": 438,
+  "log_level": "INFO",
+  "commands": {
+    "disk-usage": {
+      "description": "Check disk usage",
+      "executable": ["df", "-h"],
+      "timeout": 10
+    },
+    "memory-info": {
+      "description": "Get memory information",
+      "executable": ["free", "-h"],
+      "timeout": 5
+    },
+    "uptime": {
+      "description": "System uptime",
+      "executable": ["uptime"],
+      "timeout": 5
+    },
+    "cpu-info": {
+      "description": "CPU information",
+      "executable": ["lscpu"],
+      "timeout": 10
+    }
+  }
+}

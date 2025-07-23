@@ -1,0 +1,27 @@
+name: build and publish pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    name: external workflow
+    uses: tehw0lf/workflows/.github/workflows/build-test-publish.yml@main
+    permissions:
+      actions: write
+      contents: write
+      packages: write
+    with:
+      tool: "npm"
+      test: "run test"
+      build_branch: "run build"
+      build_main: "run build"
+      event_name: ${{ github.event_name }}
+      artifact_path: "dist"
+      library_path: "dist"
+      root_dir: "n8n-node"
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

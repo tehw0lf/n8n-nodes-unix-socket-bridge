@@ -1,0 +1,57 @@
+name: End-to-End Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # Reasonable timeout for entire workflow
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13.1
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13.1"
+          cache: "pip"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: "n8n-node/package-lock.json"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r server/requirements-test.txt
+
+      - name: Install Node.js dependencies
+        working-directory: ./n8n-node
+        run: npm ci
+
+      - name: Build n8n node
+        working-directory: ./n8n-node
+        run: npm run build
+
+      - name: Run end-to-end tests
+        working-directory: ./n8n-node
+        run: npm run test:e2e
+        timeout-minutes: 5 # 5 minutes for test execution (includes 60s Jest timeout)
+
+      - name: Cleanup Unix sockets
+        if: always() # Always run cleanup
+        run: |
+          # Clean up any leftover Unix socket files
+          sudo find /tmp -name "*.sock" -type s -delete 2>/dev/null || true
+          sudo find /tmp -name "*unix-socket-bridge*" -delete 2>/dev/null || true
+          echo "Socket cleanup completed"

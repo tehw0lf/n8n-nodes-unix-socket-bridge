@@ -1,0 +1,84 @@
+{
+  "name": "E2E Test Server",
+  "description": "Test server for end-to-end integration testing",
+  "version": "1.0.0",
+  "socket_path": "/tmp/e2e-test-unix-socket-bridge.sock",
+  "socket_permissions": 438,
+  "log_level": "INFO",
+  "commands": {
+    "ping": {
+      "description": "Simple ping command",
+      "executable": ["echo", "pong"],
+      "parameters": {}
+    },
+    "echo": {
+      "description": "Echo back a message",
+      "executable": ["echo"],
+      "timeout": 5,
+      "parameters": {
+        "message": {
+          "description": "Message to echo back",
+          "type": "string",
+          "required": true,
+          "style": "argument",
+          "pattern": "^[\\w\\s\\-_.,!?()]+$"
+        }
+      }
+    },
+    "sleep": {
+      "description": "Sleep for specified seconds (max 3)",
+      "executable": ["sleep"],
+      "timeout": 5,
+      "parameters": {
+        "seconds": {
+          "description": "Number of seconds to sleep (1-3)",
+          "type": "number",
+          "required": true,
+          "style": "argument",
+          "enum": [1, 2, 3]
+        }
+      }
+    },
+    "whoami": {
+      "description": "Return current user",
+      "executable": ["whoami"],
+      "timeout": 10
+    },
+    "test_params": {
+      "description": "Test different parameter types",
+      "executable": ["echo"],
+      "timeout": 5,
+      "parameters": {
+        "string_param": {
+          "description": "A string parameter",
+          "type": "string",
+          "required": true,
+          "style": "flag",
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "number_param": {
+          "description": "A number parameter",
+          "type": "number",
+          "required": false,
+          "style": "flag"
+        },
+        "boolean_param": {
+          "description": "A boolean parameter",
+          "type": "boolean",
+          "required": false,
+          "style": "single_flag"
+        }
+      }
+    },
+    "fail": {
+      "description": "Command that intentionally fails for error testing",
+      "executable": ["bash", "-c", "exit 1"],
+      "timeout": 5
+    },
+    "timeout_test": {
+      "description": "Command that times out for timeout testing",
+      "executable": ["sleep", "10"],
+      "timeout": 2
+    }
+  }
+}

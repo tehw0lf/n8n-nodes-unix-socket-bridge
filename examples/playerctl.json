@@ -1,0 +1,82 @@
+{
+  "name": "PlayerCtl Media Control",
+  "description": "Control media players using playerctl",
+  "version": "1.0.0",
+  "socket_path": "/tmp/playerctl.sock",
+  "socket_permissions": 438,
+  "log_level": "INFO",
+  "commands": {
+    "play": {
+      "description": "Start playback",
+      "executable": [
+        "bash",
+        "-c",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl play"
+      ],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "flag",
+          "pattern": "^[a-zA-Z0-9._-]+$"
+        }
+      }
+    },
+    "pause": {
+      "description": "Pause playback",
+      "executable": [
+        "bash",
+        "-c",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl pause"
+      ],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "flag",
+          "pattern": "^[a-zA-Z0-9._-]+$"
+        }
+      }
+    },
+    "play-pause": {
+      "description": "Toggle play/pause",
+      "executable": [
+        "bash",
+        "-c",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl play-pause"
+      ],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "flag",
+          "pattern": "^[a-zA-Z0-9._-]+$"
+        }
+      }
+    },
+    "status": {
+      "description": "Get current playback status",
+      "executable": [
+        "bash",
+        "-c",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl status"
+      ],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "flag",
+          "pattern": "^[a-zA-Z0-9._-]+$"
+        }
+      }
+    }
+  }
+}

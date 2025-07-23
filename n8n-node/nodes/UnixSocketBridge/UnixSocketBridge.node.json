@@ -1,0 +1,163 @@
+{
+  "displayName": "Unix Socket Bridge",
+  "name": "unixSocketBridge",
+  "icon": "fa:plug",
+  "group": ["communication"],
+  "version": 1,
+  "subtitle": "={{$parameter[\"operation\"] + \": \" + $parameter[\"socketPath\"]}}",
+  "description": "Generic Unix domain socket communication with configurable servers",
+  "defaults": {
+    "name": "Unix Socket Bridge"
+  },
+  "inputs": ["main"],
+  "outputs": ["main"],
+  "properties": [
+    {
+      "displayName": "Socket Path",
+      "name": "socketPath",
+      "type": "string",
+      "default": "/tmp/socket.sock",
+      "placeholder": "/tmp/socket.sock",
+      "description": "Path to the Unix domain socket"
+    },
+    {
+      "displayName": "Auto-Discover Commands",
+      "name": "autoDiscover",
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically discover available commands from the server"
+    },
+    {
+      "displayName": "Operation Mode",
+      "name": "operationMode",
+      "type": "options",
+      "displayOptions": {
+        "show": {
+          "autoDiscover": [false]
+        }
+      },
+      "options": [
+        {
+          "name": "Send Raw Message",
+          "value": "raw",
+          "description": "Send a raw message to the socket"
+        },
+        {
+          "name": "Send JSON Command",
+          "value": "json",
+          "description": "Send a structured JSON command"
+        }
+      ],
+      "default": "json"
+    },
+    {
+      "displayName": "Available Commands",
+      "name": "discoveredCommand",
+      "type": "options",
+      "typeOptions": {
+        "loadOptionsMethod": "getAvailableCommands"
+      },
+      "displayOptions": {
+        "show": {
+          "autoDiscover": [true]
+        }
+      },
+      "default": "",
+      "description": "Choose from available commands on the server"
+    },
+    {
+      "displayName": "Command",
+      "name": "command",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "operationMode": ["json"],
+          "autoDiscover": [false]
+        }
+      },
+      "default": "={{ $json.command || \"status\" }}",
+      "description": "Command to send to the server"
+    },
+    {
+      "displayName": "Raw Message",
+      "name": "rawMessage",
+      "type": "string",
+      "displayOptions": {
+        "show": {
+          "operationMode": ["raw"],
+          "autoDiscover": [false]
+        }
+      },
+      "default": "",
+      "placeholder": "Message to send",
+      "description": "Raw message to send to the socket"
+    },
+    {
+      "displayName": "Parameters",
+      "name": "parameters",
+      "type": "fixedCollection",
+      "displayOptions": {
+        "show": {
+          "operationMode": ["json"]
+        }
+      },
+      "placeholder": "Add Parameter",
+      "typeOptions": {
+        "multipleValues": true
+      },
+      "default": {},
+      "options": [
+        {
+          "name": "parameter",
+          "displayName": "Parameter",
+          "values": [
+            {
+              "displayName": "Name",
+              "name": "name",
+              "type": "string",
+              "default": "",
+              "description": "Parameter name"
+            },
+            {
+              "displayName": "Value",
+              "name": "value",
+              "type": "string",
+              "default": "",
+              "description": "Parameter value"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "displayName": "Timeout (ms)",
+      "name": "timeout",
+      "type": "number",
+      "default": 5000,
+      "description": "Connection timeout in milliseconds"
+    },
+    {
+      "displayName": "Response Format",
+      "name": "responseFormat",
+      "type": "options",
+      "options": [
+        {
+          "name": "Auto-Detect",
+          "value": "auto",
+          "description": "Automatically detect JSON or return as text"
+        },
+        {
+          "name": "JSON",
+          "value": "json",
+          "description": "Parse response as JSON"
+        },
+        {
+          "name": "Text",
+          "value": "text",
+          "description": "Return response as plain text"
+        }
+      ],
+      "default": "auto"
+    }
+  ]
+}
