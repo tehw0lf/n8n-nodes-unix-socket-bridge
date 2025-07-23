@@ -4,7 +4,7 @@
   "description": "Generic Unix domain socket communication with configurable server support for automation systems like n8n",
   "main": "index.ts",
   "scripts": {
-    "build": "tsc && cp package.json dist/",
+    "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -37,7 +37,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "index.js"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
