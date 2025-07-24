@@ -17,6 +17,9 @@ venv/
 env/
 ENV/
 
+# Claude Code
+.claude
+
 # Coverage reports
 htmlcov/
 .coverage
