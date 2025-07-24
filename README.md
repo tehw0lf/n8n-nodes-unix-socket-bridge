@@ -30,6 +30,21 @@ unix-socket-bridge/
 └── README.md
 ```
 
+## ⚠️ Node Verification Status
+
+This n8n node appears as "unverified" in the n8n interface due to its use of Node.js APIs that are outside n8n's standard allowlist:
+
+- **`net` module**: Required for Unix domain socket communication
+- **`setTimeout`/`clearTimeout`**: Used for connection timeout handling
+
+This occurs because the node requires system-level APIs for socket communication. The functionality is stable and the code is open source for review. Many legitimate n8n nodes require similar system-level APIs and face the same verification status.
+
+**What this means for users:**
+- ✅ The node works normally in all n8n versions
+- ✅ Code is open source and available for security review
+- ⚠️ You'll see an "unverified" badge in the n8n interface
+- ⚠️ n8n may show a warning when you first add the node
+
 ## 🛠️ Installation
 
 ### Prerequisites

@@ -1,6 +1,6 @@
 {
   "name": "@tehw0lf/n8n-nodes-unix-socket-bridge",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Generic Unix domain socket communication with configurable server support for automation systems like n8n",
   "main": "index.ts",
   "scripts": {
