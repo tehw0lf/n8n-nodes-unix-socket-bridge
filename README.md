@@ -37,7 +37,7 @@ This n8n node appears as "unverified" in the n8n interface due to its use of Nod
 - **`net` module**: Required for Unix domain socket communication
 - **`setTimeout`/`clearTimeout`**: Used for connection timeout handling
 
-This occurs because the node requires system-level APIs for socket communication. The functionality is stable and the code is open source for review. Many legitimate n8n nodes require similar system-level APIs and face the same verification status.
+This occurs because the node requires system-level APIs for socket communication. The functionality is stable and the code is open source for review.
 
 **What this means for users:**
 - ✅ The node works normally in all n8n versions
