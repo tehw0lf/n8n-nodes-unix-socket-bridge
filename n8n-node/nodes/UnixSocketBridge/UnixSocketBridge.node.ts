@@ -513,7 +513,7 @@ export async function sendToUnixSocket(
     const socket = new net.Socket();
     let response = "";
 
-    const timeoutHandle = global.setTimeout(() => {
+    const timeoutHandle = setTimeout(() => {
       socket.destroy();
       reject(new Error(`Socket connection timeout after ${timeoutMs}ms`));
     }, timeoutMs);
@@ -527,12 +527,12 @@ export async function sendToUnixSocket(
     });
 
     socket.on("end", () => {
-      global.clearTimeout(timeoutHandle);
+      clearTimeout(timeoutHandle);
       resolve(response);
     });
 
     socket.on("close", () => {
-      global.clearTimeout(timeoutHandle);
+      clearTimeout(timeoutHandle);
       if (response) {
         resolve(response);
       } else {
@@ -541,7 +541,7 @@ export async function sendToUnixSocket(
     });
 
     socket.on("error", (error: Error) => {
-      global.clearTimeout(timeoutHandle);
+      clearTimeout(timeoutHandle);
       reject(new Error(`Socket error: ${error.message}`));
     });
 
