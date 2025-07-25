@@ -21,23 +21,33 @@ This occurs because the node requires system-level APIs for socket communication
 - ⚠️ You'll see an "unverified" badge in the n8n interface
 - ⚠️ n8n may show a warning when you first add the node
 
-### Install the n8n node from npm (Recommended)
+## Installation
+
+### Method 1: Install via n8n interface (Easiest)
+1. Open n8n in your browser
+2. Go to **Settings** → **Community Nodes**
+3. Click **Install a community node**
+4. Enter: `@tehw0lf/n8n-nodes-unix-socket-bridge`
+5. Click **Install**
+6. Restart n8n when prompted
+
+### Method 2: Install from npm
 ```bash
 npm install -g @tehw0lf/n8n-nodes-unix-socket-bridge
 ```
 
-### Alternative - Install from source
+### Method 3: Install from source
 ```bash
 cd n8n-node
 npm install
 npm run build
 npm pack
-npm install -g ./n8n-nodes-unix-socket-bridge-1.0.0.tgz
+npm install -g ./n8n-nodes-unix-socket-bridge-1.0.7.tgz
 ```
 
-### ⚠️ Important: Configure n8n Environment Variables
+**⚠️ Important if installing with npm or from source: Configure n8n to recognize the custom node**
 
-After installation, you **must** set these environment variables for n8n to recognize the custom node:
+After installing from other sources than within n8n directly, you **must** set these environment variables for n8n to recognize the custom node:
 
 ```bash
 # Find your installation path

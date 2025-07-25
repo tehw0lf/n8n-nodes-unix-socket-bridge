@@ -55,7 +55,15 @@ This occurs because the node requires system-level APIs for socket communication
 
 ### Quick Setup
 
-1. **Install the n8n node from npm (Recommended):**
+1. **Install the n8n node via n8n interface (Easiest):**
+   - Open n8n in your browser
+   - Go to **Settings** → **Community Nodes**
+   - Click **Install a community node**
+   - Enter: `@tehw0lf/n8n-nodes-unix-socket-bridge`
+   - Click **Install**
+   - Restart n8n when prompted
+
+2. **Install the n8n node from npm:**
 ```bash
 npm install -g @tehw0lf/n8n-nodes-unix-socket-bridge
 ```
@@ -66,12 +74,12 @@ cd n8n-node
 npm install
 npm run build
 npm pack
-npm install -g ./n8n-nodes-unix-socket-bridge-1.0.0.tgz
+npm install -g ./n8n-nodes-unix-socket-bridge-1.0.7.tgz
 ```
 
-**⚠️ Important: Configure n8n to recognize the custom node**
+**⚠️ Important if installing with npm or from source: Configure n8n to recognize the custom node**
 
-After installation, you **must** set these environment variables for n8n to pick up the custom node:
+After installing from other sources than within n8n directly, you **must** set these environment variables for n8n to recognize the custom node:
 
 ```bash
 # Find your installation path
