@@ -2,136 +2,143 @@
 
 ![n8n.io - Workflow Automation](https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-logo.png)
 
-An n8n community node that enables generic Unix domain socket communication with configurable servers for system automation and command execution.
+An n8n community node that enables Unix domain socket communication for system automation and command execution.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-## ⚠️ Node Verification Status
-
-This n8n node appears as "unverified" in the n8n interface due to its use of Node.js APIs that are outside n8n's standard allowlist:
-
-- **`net` module**: Required for Unix domain socket communication
-- **`setTimeout`/`clearTimeout`**: Used for connection timeout handling
-
-This occurs because the node requires system-level APIs for socket communication. The functionality is stable and the code is open source for review.
-
-**What this means for users:**
-- ✅ The node works normally in all n8n versions
-- ✅ Code is open source and available for security review
-- ⚠️ You'll see an "unverified" badge in the n8n interface
-- ⚠️ n8n may show a warning when you first add the node
-
 ## Installation
 
-### Method 1: Install via n8n interface (Easiest)
-1. Open n8n in your browser
-2. Go to **Settings** → **Community Nodes**
-3. Click **Install a community node**
-4. Enter: `@tehw0lf/n8n-nodes-unix-socket-bridge`
-5. Click **Install**
-6. Restart n8n when prompted
+Open your n8n instance and install directly through the UI:
 
-### Method 2: Install from npm
-```bash
-npm install -g @tehw0lf/n8n-nodes-unix-socket-bridge
-```
+1. Go to **Settings** → **Community Nodes**
+2. Click **Install a community node**
+3. Enter: `@tehw0lf/n8n-nodes-unix-socket-bridge`
+4. Click **Install**
 
-### Method 3: Install from source
-```bash
-cd n8n-node
-npm install
-npm run build
-npm pack
-npm install -g ./n8n-nodes-unix-socket-bridge-1.0.7.tgz
-```
+The node will appear in your node list as "Unix Socket Bridge"!
 
-**⚠️ Important if installing with npm or from source: Configure n8n to recognize the custom node**
+## Features
 
-After installing from other sources than within n8n directly, you **must** set these environment variables for n8n to recognize the custom node:
-
-```bash
-# Find your installation path
-npm list -g @tehw0lf/n8n-nodes-unix-socket-bridge
-
-# Set required environment variables
-# Path to your custom node installation
-export N8N_CUSTOM_EXTENSIONS=/home/user/.nvm/versions/node/v20.0.0/lib/node_modules/@tehw0lf/n8n-nodes-unix-socket-bridge
-
-# Ensure n8n reinstalls missing packages (recommended for custom nodes)
-export N8N_REINSTALL_MISSING_PACKAGES=true
-
-# For multiple custom nodes, separate with colons
-# export N8N_CUSTOM_EXTENSIONS=/path/to/node1:/path/to/node2
-```
-
-Add these environment variables to your shell profile (`.bashrc`, `.zshrc`, etc.) or your n8n startup script to make them persistent.
-
-## Operations
-
-The Unix Socket Bridge node provides seamless communication with Unix domain socket servers:
-
-- **Auto-Discovery**: Automatically discovers available commands from servers at runtime
-- **Raw Communication**: Send raw messages to Unix sockets  
-- **JSON Commands**: Send structured JSON commands with parameter validation
+- **Auto-Discovery**: Automatically discovers available commands from socket servers
+- **Easy Configuration**: Simple dropdown selection of available operations
+- **Parameter Validation**: Built-in validation ensures correct command execution
 - **Flexible Response Handling**: Auto-detect JSON responses or handle as plain text
+- **Production Ready**: Works with systemd services and Docker deployments
 
-## Node Reference
+## Quick Start
 
-### Socket Path
-Path to the Unix domain socket file (e.g., `/tmp/socket.sock`)
+### 1. Set Up a Socket Server
 
-### Auto-Discover Commands
-When enabled, the node automatically discovers available commands from the server using introspection. This provides a user-friendly dropdown of available operations.
-
-### Operation Modes
-
-#### Auto-Discovery Mode (Recommended)
-- Automatically loads available commands from the server
-- Provides dropdown selection of commands
-- Validates parameters based on server configuration
-- Handles parameter types and formatting automatically
-
-#### Manual Modes  
-- **Send JSON Command**: Manually specify command name and parameters
-- **Send Raw Message**: Send arbitrary text messages to the socket
-
-### Parameters
-When using JSON commands, parameters can be provided as key-value pairs. The node handles:
-- **String parameters**: Text values
-- **Number parameters**: Numeric values  
-- **Boolean parameters**: True/false flags
-- **Parameter validation**: Based on server-defined patterns and types
-
-### Response Handling
-- **Auto-Detect** (default): Automatically detects JSON responses, falls back to text
-- **JSON**: Forces JSON parsing of responses
-- **Text**: Returns raw text responses
-
-## Configuration Example
-
-### Server Setup
-First, set up a Unix socket server using the provided server component:
+Create a configuration file for your commands (e.g., `system-monitor.json`):
 
 ```json
 {
-  "name": "System Control",
-  "description": "Basic system monitoring commands",
+  "name": "System Monitor",
   "socket_path": "/tmp/system.sock",
   "commands": {
     "uptime": {
       "description": "Get system uptime",
-      "executable": ["uptime"],
-      "timeout": 5
+      "executable": ["uptime"]
     },
     "disk-usage": {
       "description": "Check disk usage",
-      "executable": ["df", "-h"],
-      "timeout": 10,
+      "executable": ["df", "-h"]
+    },
+    "memory": {
+      "description": "Check memory usage",
+      "executable": ["free", "-h"]
+    }
+  }
+}
+```
+
+Start the server:
+```bash
+python3 socket-server.py system-monitor.json
+```
+
+### 2. Use in n8n
+
+1. Add the **Unix Socket Bridge** node to your workflow
+2. Set **Socket Path**: `/tmp/system.sock`
+3. Enable **Auto-Discover Commands** (recommended)
+4. Select a command from the dropdown
+5. Execute your workflow! 🎉
+
+## Node Configuration
+
+### Socket Path
+Path to the Unix domain socket file (e.g., `/tmp/socket.sock`)
+
+### Auto-Discover Commands (Recommended)
+When enabled, automatically loads available commands from the server and provides a dropdown for easy selection.
+
+### Operation Modes
+
+#### With Auto-Discovery
+- Select commands from dropdown menu
+- Automatic parameter validation
+- Type-safe parameter handling
+
+#### Manual Modes
+- **Send JSON Command**: Manually specify command and parameters
+- **Send Raw Message**: Send arbitrary text messages
+
+### Response Handling
+- **Auto-Detect** (default): Automatically detects JSON or text
+- **JSON**: Forces JSON parsing
+- **Text**: Returns raw text
+
+## Example Use Cases
+
+### System Monitoring
+Monitor and automate based on system metrics:
+- Send alerts when disk space is low
+- Track memory usage over time
+- Monitor system uptime
+
+### Media Control
+Control media players (using playerctl):
+```json
+{
+  "name": "Media Control",
+  "socket_path": "/tmp/playerctl.sock",
+  "commands": {
+    "play-pause": {
+      "description": "Toggle play/pause",
+      "executable": ["playerctl", "play-pause"]
+    },
+    "next": {
+      "description": "Next track",
+      "executable": ["playerctl", "next"]
+    },
+    "current": {
+      "description": "Current track info",
+      "executable": ["playerctl", "metadata", "--format", "{{artist}} - {{title}}"]
+    }
+  }
+}
+```
+
+### Docker Management
+Integrate Docker operations:
+```json
+{
+  "name": "Docker Control",
+  "socket_path": "/tmp/docker.sock",
+  "commands": {
+    "list": {
+      "description": "List containers",
+      "executable": ["docker", "ps", "--format", "json"]
+    },
+    "restart": {
+      "description": "Restart a container",
+      "executable": ["docker", "restart"],
       "parameters": {
-        "path": {
-          "description": "Specific path to check",
+        "container": {
+          "description": "Container name or ID",
           "type": "string",
-          "required": false,
+          "required": true,
           "style": "argument"
         }
       }
@@ -140,85 +147,90 @@ First, set up a Unix socket server using the provided server component:
 }
 ```
 
-### n8n Workflow Usage
-1. Add the Unix Socket Bridge node to your workflow
-2. Configure the socket path: `/tmp/system.sock`
-3. Enable auto-discovery (recommended)
-4. Select a command from the dropdown (e.g., "uptime")
-5. Add parameters if needed
-6. Execute the workflow
-
-## Use Cases
-
-- **System Monitoring**: Check disk usage, memory, CPU, uptime
-- **Media Control**: Control music/video players via playerctl
-- **Docker Management**: Start/stop containers, health checks
-- **Custom Applications**: Integrate any command-line tool with n8n
-- **System Administration**: Automate routine system tasks
-- **Development Tools**: Integrate build tools, test runners, deployment scripts
+### Custom Scripts
+Run any custom script or command:
+```json
+{
+  "name": "Custom Scripts",
+  "socket_path": "/tmp/scripts.sock",
+  "commands": {
+    "backup": {
+      "description": "Run backup script",
+      "executable": ["/usr/local/bin/backup.sh"]
+    },
+    "deploy": {
+      "description": "Deploy application",
+      "executable": ["/usr/local/bin/deploy.sh"],
+      "parameters": {
+        "environment": {
+          "description": "Target environment",
+          "type": "string",
+          "required": true,
+          "pattern": "^(dev|staging|prod)$"
+        }
+      }
+    }
+  }
+}
+```
 
 ## Server Component
 
-This n8n node works with the Unix Socket Bridge server, which provides:
+This node requires the Unix Socket Bridge server to be running. The server:
 
-- **Configurable Commands**: Define any system command via JSON configuration
-- **Parameter Validation**: Built-in type checking and pattern validation
-- **Security**: Sandboxed execution with restricted environments
-- **Introspection**: Auto-discovery of available commands
+- Exposes system commands via Unix sockets
+- Provides command introspection for auto-discovery
+- Validates parameters and handles execution
+- Returns structured responses
 
-For complete server setup and configuration examples, see the [main repository](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge).
+Get the server from the [main repository](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge).
 
-## Security
+## Production Setup
 
-- Commands are allowlisted in server configuration
-- Input validation prevents command injection
-- Configurable timeouts prevent hanging processes
-- Restricted execution environment
-- Socket file permissions control access
+For production use, run the socket server as a systemd service:
 
-## Compatibility
+```ini
+[Unit]
+Description=Unix Socket Bridge
+After=network.target
 
-- **Node.js**: >=16.0.0
-- **n8n**: 1.0.0+ (tested with 1.102.4+)
-- **Operating Systems**: Linux, macOS (Unix systems with socket support)
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/socket-server.py /etc/socket-bridge/config.json
+Restart=always
+User=www-data
 
-## Resources
-
-- [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
-- [GitHub Repository](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge)
-- [Configuration Examples](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge/tree/main/examples)
+[Install]
+WantedBy=multi-user.target
+```
 
 ## Troubleshooting
 
-### Node Not Appearing in n8n
+### Node not appearing in n8n?
+- Ensure you've restarted n8n after installation
+- Check n8n logs for any errors
 
-1. **Check environment variables are set:**
-```bash
-echo "N8N_CUSTOM_EXTENSIONS: $N8N_CUSTOM_EXTENSIONS"
-echo "N8N_REINSTALL_MISSING_PACKAGES: $N8N_REINSTALL_MISSING_PACKAGES"
-```
+### Commands not showing in dropdown?
+- Verify the socket server is running: `ps aux | grep socket-server`
+- Check if the socket file exists: `ls -la /tmp/*.sock`
+- Test the connection with the CLI client
 
-2. **Verify the node is installed:**
-```bash
-npm list -g @tehw0lf/n8n-nodes-unix-socket-bridge
-```
-
-3. **Check n8n logs for errors:**
-```bash
-# For systemd installations
-sudo journalctl -u n8n -f
-
-# For Docker installations
-docker logs n8n-container-name
-```
-
-4. **Restart n8n after installation.**
-
-### Socket Connection Issues
-
-- Verify the socket server is running
+### Connection errors?
 - Check socket file permissions
-- Ensure the socket path is correct in both server config and n8n node
+- Ensure n8n can access the socket path
+- Verify the server configuration
+
+## Compatibility
+
+- **n8n**: 1.0.0 and above
+- **Operating Systems**: Linux, macOS (any Unix system with socket support)
+- **Requirements**: Python 3.x for the socket server
+
+## Resources
+
+- [GitHub Repository](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge)
+- [Configuration Examples](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge/tree/main/examples)
+- [n8n Community Nodes Documentation](https://docs.n8n.io/integrations/community-nodes/)
 
 ## License
 
@@ -227,4 +239,10 @@ docker logs n8n-container-name
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge/issues)
-- **Documentation**: [Repository README](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge#readme)
+- **Examples**: Check the repository for more configuration examples
+
+---
+
+**Made with ❤️ for the n8n community**
+
+*Transform any command-line tool into an n8n-accessible service!*
