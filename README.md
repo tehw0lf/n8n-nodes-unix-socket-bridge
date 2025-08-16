@@ -10,6 +10,21 @@ A powerful n8n community node that enables communication with Unix domain socket
 - **Flexible Configuration**: Works with any system command via JSON configuration
 - **Production Ready**: Includes systemd service examples and security controls
 
+## ⚠️ Important Docker Limitation
+
+**This Unix Socket Bridge cannot be used if n8n runs in a Docker container and the socket is on the host machine.** Unix domain sockets are filesystem-based and cannot cross container boundaries by default.
+
+### Supported Configurations:
+- ✅ **n8n installed natively on host** + Unix sockets on host (full functionality)
+  - Works Linux, macOS (any Unix system with socket support)
+- ✅ **n8n in Docker** + Unix sockets **inside the same container** (limited use cases)
+- ✅ **Managing Docker containers** from native n8n installation
+
+### Unsupported Configuration:
+- ❌ **n8n in Docker container** trying to access Unix sockets on the host filesystem
+
+**Solution**: For full functionality, install n8n natively on the host system to have direct access to Unix domain sockets.
+
 ## 📦 Installation
 
 ### Install in n8n
@@ -217,6 +232,12 @@ sudo systemctl start socket-bridge-playerctl
 - Make sure n8n can access the socket file
 - Check socket file permissions: `ls -la /tmp/your-socket.sock`
 - Consider running the socket server as the same user as n8n
+
+## 💻 Platform Compatibility
+
+- **Linux**: Full support for all features
+- **macOS**: Full support for all features (tested and confirmed)
+- **Windows**: Not supported (Unix domain sockets not available)
 
 ## 🔒 Security Notes
 

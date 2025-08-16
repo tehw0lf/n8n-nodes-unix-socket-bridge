@@ -17,6 +17,18 @@ Open your n8n instance and install directly through the UI:
 
 The node will appear in your node list as "Unix Socket Bridge"!
 
+## ⚠️ Docker Compatibility Warning
+
+**Important**: This node cannot access Unix domain sockets on the host if n8n is running inside a Docker container. Unix sockets are filesystem-based and do not cross container boundaries.
+
+### Compatibility Matrix:
+- ✅ **n8n native installation** → Host Unix sockets (recommended)
+- ✅ **n8n in Docker** → Unix sockets inside the same container
+- ✅ **Docker container management** from native n8n
+- ❌ **n8n in Docker** → Host Unix sockets (not supported)
+
+**For full functionality**: Install n8n natively on your host system to access Unix domain sockets.
+
 ## Features
 
 - **Auto-Discovery**: Automatically discovers available commands from socket servers
