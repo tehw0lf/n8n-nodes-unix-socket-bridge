@@ -160,3 +160,35 @@ Server configurations must include:
 2. Verify server is running: `ps aux | grep socket-server`
 3. Test with CLI client: `python3 server/cli-client.py /tmp/socket.sock ping`
 4. Check n8n logs for detailed error messages
+
+## Commit Message Guidelines
+
+**IMPORTANT**: Keep commit messages concise and focused. Do NOT use conventional commits format or include Co-Authored-By lines.
+
+### Good commit message format:
+```
+Brief descriptive title (50 chars or less)
+
+- Key improvement/fix 1
+- Key improvement/fix 2  
+- Key improvement/fix 3
+
+Optional compatibility note if relevant.
+```
+
+### Example:
+```
+Enhance UnixSocketBridge with parameter types and response controls
+
+- Add parameter type system (string, number, boolean, json, auto)
+- Add maxResponseSize option to prevent memory issues
+- Improve error messages with specific troubleshooting
+- Expand test coverage from 9 to 24 tests
+```
+
+### Avoid:
+- Verbose conventional commit prefixes (feat:, fix:, etc.)
+- Co-Authored-By lines
+- Overly detailed changelogs in commit messages
+- Breaking change sections when there are no breaking changes
+- Unnecessary assertions about passing tests
