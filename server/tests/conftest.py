@@ -24,6 +24,11 @@ def sample_config():
         "socket_path": "/tmp/test.sock",
         "socket_permissions": 438,
         "log_level": "INFO",
+        "allowed_executable_dirs": [
+            "/usr/bin/",
+            "/bin/",
+            "/usr/local/bin/"
+        ],
         "commands": {
             "echo": {
                 "description": "Echo back the input",

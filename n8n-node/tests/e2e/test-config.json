@@ -5,6 +5,16 @@
   "socket_path": "/tmp/e2e-test-unix-socket-bridge.sock",
   "socket_permissions": 438,
   "log_level": "INFO",
+  "enable_rate_limit": true,
+  "rate_limit": {
+    "requests": 30,
+    "window": 60
+  },
+  "max_request_size": 1048576,
+  "max_output_size": 100000,
+  "enable_threading": false,
+  "debug": false,
+  "allowed_executable_dirs": ["/usr/bin/"],
   "commands": {
     "ping": {
       "description": "Simple ping command",

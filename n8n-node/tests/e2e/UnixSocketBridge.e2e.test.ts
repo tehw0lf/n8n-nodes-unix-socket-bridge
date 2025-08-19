@@ -1,10 +1,17 @@
-import { afterAll, beforeAll, describe, expect, jest, test } from '@jest/globals';
-import { IDataObject } from 'n8n-workflow';
-import * as path from 'path';
+import {
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  jest,
+  test,
+} from "@jest/globals";
+import { IDataObject } from "n8n-workflow";
+import * as path from "path";
 
-import { UnixSocketBridge } from '../../nodes/UnixSocketBridge/UnixSocketBridge.node';
-import { PythonServerManager } from './python-server-manager';
-import { ResourceManager } from './utils/cleanup';
+import { UnixSocketBridge } from "../../nodes/UnixSocketBridge/UnixSocketBridge.node";
+import { PythonServerManager } from "./python-server-manager";
+import { ResourceManager } from "./utils/cleanup";
 
 /**
  * End-to-End tests for Unix Socket Bridge
@@ -331,7 +338,7 @@ describe("Unix Socket Bridge E2E Tests", () => {
         await expect(() =>
           unixSocketBridge.execute.call(mockContext)
         ).rejects.toThrowError(
-          "Socket error: connect ENOENT /tmp/nonexistent-socket.sock"
+          "Socket error: Socket not found at /tmp/nonexistent-socket.sock"
         );
       },
       TEST_TIMEOUT

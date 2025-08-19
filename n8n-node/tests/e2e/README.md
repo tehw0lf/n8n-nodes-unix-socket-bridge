@@ -206,7 +206,7 @@ const response = await sendPing(socketPath);
 
 ```bash
 # Check Python server manually
-python3 ../../server/socket-server.py tests/e2e/test-config.json
+python3 ../../server/socket-server.py test-config.json
 
 # Test socket connectivity
 python3 ../../server/cli-client.py /tmp/e2e-test-unix-socket-bridge.sock ping

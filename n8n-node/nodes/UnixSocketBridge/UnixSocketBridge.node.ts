@@ -11,6 +11,44 @@ import {
 import * as net from "net";
 
 /**
+ * Interfaces for type safety
+ */
+interface SocketCommand {
+  command: string;
+  parameters?: Record<string, any>;
+}
+
+interface ServerInfo {
+  success: boolean;
+  server_info?: {
+    name: string;
+    description?: string;
+    version?: string;
+    commands: Record<
+      string,
+      {
+        description?: string;
+        parameters?: Record<string, any>;
+        examples?: any[];
+      }
+    >;
+  };
+  error?: string;
+}
+
+interface CommandResponse {
+  success: boolean;
+  command?: string;
+  returncode?: number;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  output?: string;
+  parsed_output?: any;
+  timestamp?: number;
+}
+
+/**
  * Unix Socket Bridge Node for n8n
  *
  * This node provides a generic interface for communicating with Unix domain socket servers.
@@ -54,7 +92,7 @@ export class UnixSocketBridge implements INodeType {
         type: "string",
         default: "/tmp/socket.sock",
         placeholder: "/tmp/socket.sock",
-        description: "Path to the Unix domain socket",
+        description: "Path to the Unix domain socket file",
         required: true,
       },
       {
@@ -93,7 +131,7 @@ export class UnixSocketBridge implements INodeType {
         },
         default: "",
         description:
-          "If commands don't load, try changing the socket path or toggling auto-discovery off/on",
+          "If commands don't load, try changing the socket path slightly and changing it back, or toggle auto-discovery off/on",
       },
       {
         displayName: "Manual Command",
@@ -129,6 +167,7 @@ export class UnixSocketBridge implements INodeType {
                 default: "",
                 description: 'Parameter name (e.g., "player")',
                 placeholder: "player",
+                required: false,
               },
               {
                 displayName: "Value",
@@ -137,6 +176,40 @@ export class UnixSocketBridge implements INodeType {
                 default: "",
                 description: 'Parameter value (e.g., "spotify")',
                 placeholder: "spotify",
+              },
+              {
+                displayName: "Type",
+                name: "type",
+                type: "options",
+                options: [
+                  {
+                    name: "Auto-Detect",
+                    value: "auto",
+                    description: "Automatically detect the type",
+                  },
+                  {
+                    name: "String",
+                    value: "string",
+                    description: "Text value",
+                  },
+                  {
+                    name: "Number",
+                    value: "number",
+                    description: "Numeric value",
+                  },
+                  {
+                    name: "Boolean",
+                    value: "boolean",
+                    description: "True/False value",
+                  },
+                  {
+                    name: "JSON",
+                    value: "json",
+                    description: "Complex JSON value",
+                  },
+                ],
+                default: "auto",
+                description: "Parameter value type",
               },
             ],
           },
@@ -177,6 +250,42 @@ export class UnixSocketBridge implements INodeType {
           },
         ],
         default: "auto",
+        description: "How to interpret the server response",
+      },
+      {
+        displayName: "Options",
+        name: "options",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        options: [
+          {
+            displayName: "Continue On Fail",
+            name: "continueOnFail",
+            type: "boolean",
+            default: false,
+            description: "Whether to continue workflow execution on error",
+          },
+          {
+            displayName: "Max Response Size",
+            name: "maxResponseSize",
+            type: "number",
+            default: 1048576,
+            description: "Maximum response size in bytes (default: 1MB)",
+            typeOptions: {
+              minValue: 1024,
+              maxValue: 10485760,
+            },
+          },
+          {
+            displayName: "Include Metadata",
+            name: "includeMetadata",
+            type: "boolean",
+            default: true,
+            description:
+              "Include metadata like timestamp and socket path in response",
+          },
+        ],
       },
     ],
   };
@@ -195,19 +304,6 @@ export class UnixSocketBridge implements INodeType {
        *
        * @param this - The load options function context from n8n
        * @returns Promise resolving to an array of command options for the dropdown
-       *
-       * @example
-       * // Socket server response format expected:
-       * {
-       *   "success": true,
-       *   "server_info": {
-       *     "name": "PlayerCtl Media Control",
-       *     "commands": {
-       *       "play": { "description": "Start playback" },
-       *       "pause": { "description": "Pause playback" }
-       *     }
-       *   }
-       * }
        */
       async getAvailableCommands(
         this: ILoadOptionsFunctions
@@ -221,16 +317,17 @@ export class UnixSocketBridge implements INodeType {
         }
 
         try {
-          const introspectionRequest = JSON.stringify({
+          const introspectionRequest: SocketCommand = {
             command: "__introspect__",
-          });
+          };
+
           const response = await sendToUnixSocket(
             socketPath,
-            introspectionRequest,
+            JSON.stringify(introspectionRequest),
             timeout
           );
 
-          const serverInfo = JSON.parse(response);
+          const serverInfo: ServerInfo = JSON.parse(response);
 
           if (
             serverInfo.success &&
@@ -240,36 +337,47 @@ export class UnixSocketBridge implements INodeType {
             const commands = serverInfo.server_info.commands;
             const options: INodePropertyOptions[] = [];
 
-            // Add server info as first option
+            // Add server info as header
             options.push({
               name: `📡 ${serverInfo.server_info.name} (${
                 Object.keys(commands).length
-              } commands)`,
+              } commands available)`,
               value: "__server_info__",
             });
 
             // Add separator
             options.push({
-              name: "─────────────────────────",
+              name: "──────────────────────────",
               value: "",
             });
 
-            // Add commands
-            for (const [commandName, commandInfo] of Object.entries(
-              commands as any
-            )) {
-              const description =
-                (commandInfo as any).description || "No description";
+            // Add commands with better formatting
+            for (const [commandName, commandInfo] of Object.entries(commands)) {
+              const description = commandInfo.description || "No description";
+              const hasParams =
+                commandInfo.parameters &&
+                Object.keys(commandInfo.parameters).length > 0;
+
+              const paramIndicator = hasParams ? " 🔧" : "";
               options.push({
-                name: `${commandName} - ${description}`,
+                name: `${commandName}${paramIndicator} - ${description}`,
                 value: commandName,
+                description: hasParams
+                  ? "This command accepts parameters"
+                  : undefined,
               });
             }
 
             return options;
+          } else if (serverInfo.error) {
+            return [
+              { name: `❌ Server error: ${serverInfo.error}`, value: "" },
+              { name: "Check server logs for details", value: "" },
+            ];
           } else {
             return [
               { name: "⚠️ Server responded but no commands found", value: "" },
+              { name: "Check server configuration", value: "" },
             ];
           }
         } catch (error: any) {
@@ -281,7 +389,7 @@ export class UnixSocketBridge implements INodeType {
                 value: "",
               },
               {
-                name: "Try: python3 server/socket-server.py config.json",
+                name: "Try: python3 socket-server.py config.json",
                 value: "",
               },
             ];
@@ -290,18 +398,27 @@ export class UnixSocketBridge implements INodeType {
             error.message.includes("not found")
           ) {
             return [
-              { name: "📁 Socket file not found", value: "" },
-              { name: "Check socket path and server status", value: "" },
+              { name: "🔍 Socket file not found", value: "" },
+              { name: `Path: ${socketPath}`, value: "" },
+              { name: "Check if server is running", value: "" },
             ];
           } else if (error.message.includes("ECONNREFUSED")) {
             return [
               { name: "🚫 Connection refused", value: "" },
               { name: "Server may not be listening on this socket", value: "" },
             ];
+          } else if (error.message.includes("EACCES")) {
+            return [
+              { name: "🔒 Permission denied", value: "" },
+              { name: "Check socket file permissions", value: "" },
+            ];
           } else {
+            const shortError = error.message.substring(0, 50);
             return [
               {
-                name: `❌ Error: ${error.message.substring(0, 50)}...`,
+                name: `❌ Error: ${shortError}${
+                  error.message.length > 50 ? "..." : ""
+                }`,
                 value: "",
               },
               { name: "You can still use manual mode", value: "" },
@@ -323,16 +440,6 @@ export class UnixSocketBridge implements INodeType {
    *
    * @param this - The execution function context from n8n
    * @returns Promise resolving to node execution data
-   *
-   * @throws {NodeOperationError} When invalid command is selected or socket communication fails
-   *
-   * @example
-   * // Execution flow:
-   * // 1. Validate and extract parameters
-   * // 2. Build command request with parameters
-   * // 3. Send to Unix socket
-   * // 4. Parse and format response
-   * // 5. Return structured data
    */
   async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
     const items = this.getInputData();
@@ -351,25 +458,40 @@ export class UnixSocketBridge implements INodeType {
           i
         ) as string;
 
+        // Get options
+        const options = this.getNodeParameter("options", i, {}) as any;
+        const maxResponseSize = options.maxResponseSize || 1048576;
+        const includeMetadata = options.includeMetadata !== false;
+
         let command: string;
         if (autoDiscover) {
           command = this.getNodeParameter("discoveredCommand", i) as string;
-          // Skip if it's the server info option
-          if (command === "__server_info__" || command === "") {
+          // Validate command selection
+          if (command === "__server_info__" || command === "" || !command) {
             throw new NodeOperationError(
               this.getNode(),
               "Please select a valid command from the dropdown",
-              { itemIndex: i }
+              {
+                itemIndex: i,
+                description: "Use the dropdown to select an available command",
+              }
             );
           }
         } else {
           command = this.getNodeParameter("command", i) as string;
+          if (!command) {
+            throw new NodeOperationError(
+              this.getNode(),
+              "Command is required",
+              { itemIndex: i }
+            );
+          }
         }
 
         // Build the request
-        const jsonMessage: any = { command };
+        const jsonMessage: SocketCommand = { command };
 
-        // Add parameters if provided
+        // Process parameters with type handling
         const parameters = this.getNodeParameter("parameters", i, {}) as any;
         if (
           parameters &&
@@ -378,13 +500,58 @@ export class UnixSocketBridge implements INodeType {
           parameters.parameter.length > 0
         ) {
           jsonMessage.parameters = {};
+
           for (const param of parameters.parameter) {
-            if (param.name && param.value !== undefined) {
-              // Try to parse value as JSON, fallback to string
+            if (param.name && param.value !== undefined && param.value !== "") {
+              const paramType = param.type || "auto";
+              let processedValue: any = param.value;
+
               try {
-                jsonMessage.parameters[param.name] = JSON.parse(param.value);
-              } catch {
-                jsonMessage.parameters[param.name] = param.value;
+                switch (paramType) {
+                  case "number":
+                    processedValue = Number(param.value);
+                    if (isNaN(processedValue)) {
+                      throw new Error(`Invalid number: ${param.value}`);
+                    }
+                    break;
+
+                  case "boolean":
+                    if (typeof param.value === "string") {
+                      processedValue = ["true", "yes", "1", "on"].includes(
+                        param.value.toLowerCase()
+                      );
+                    } else {
+                      processedValue = Boolean(param.value);
+                    }
+                    break;
+
+                  case "json":
+                    processedValue = JSON.parse(param.value);
+                    break;
+
+                  case "string":
+                    processedValue = String(param.value);
+                    break;
+
+                  case "auto":
+                  default:
+                    // Try to parse as JSON first
+                    try {
+                      processedValue = JSON.parse(param.value);
+                    } catch {
+                      // If not JSON, keep as string
+                      processedValue = param.value;
+                    }
+                    break;
+                }
+
+                jsonMessage.parameters[param.name] = processedValue;
+              } catch (error: any) {
+                throw new NodeOperationError(
+                  this.getNode(),
+                  `Failed to process parameter "${param.name}": ${error.message}`,
+                  { itemIndex: i }
+                );
               }
             }
           }
@@ -392,16 +559,17 @@ export class UnixSocketBridge implements INodeType {
 
         const messageToSend = JSON.stringify(jsonMessage);
 
-        // Send message to Unix socket
+        // Send message to Unix socket with size limit
         const response = await sendToUnixSocket(
           socketPath,
           messageToSend,
-          timeout
+          timeout,
+          maxResponseSize
         );
 
+        // Parse response based on format setting
         let parsedResponse: any;
         if (responseFormat === "auto") {
-          // Try to parse as JSON, fallback to text
           try {
             parsedResponse = JSON.parse(response);
           } catch {
@@ -414,37 +582,64 @@ export class UnixSocketBridge implements INodeType {
             throw new NodeOperationError(
               this.getNode(),
               `Failed to parse response as JSON: ${error.message}`,
-              { itemIndex: i }
+              {
+                itemIndex: i,
+                description:
+                  "Server response is not valid JSON. Try using 'Text' response format.",
+              }
             );
           }
         } else {
           parsedResponse = response;
         }
 
-        // Enhance response with metadata
-        const responseData: any = {
-          socketPath,
-          command,
-          message: messageToSend,
-          response: parsedResponse,
-          success: true,
-          timestamp: new Date().toISOString(),
-        };
+        // Build response data
+        let responseData: any;
 
-        // If response is a structured object with success field, use that
-        if (
-          typeof parsedResponse === "object" &&
-          parsedResponse !== null &&
-          "success" in parsedResponse
-        ) {
-          responseData.success = parsedResponse.success;
-          responseData.output = parsedResponse.stdout || parsedResponse.output;
-          responseData.error = parsedResponse.error || parsedResponse.stderr;
-          responseData.returncode = parsedResponse.returncode;
+        if (includeMetadata) {
+          responseData = {
+            socketPath,
+            command,
+            request: jsonMessage,
+            response: parsedResponse,
+            success: true,
+            timestamp: new Date().toISOString(),
+          };
+
+          // Extract structured response fields if available
+          if (
+            typeof parsedResponse === "object" &&
+            parsedResponse !== null &&
+            "success" in parsedResponse
+          ) {
+            const cmdResponse = parsedResponse as CommandResponse;
+            responseData.success = cmdResponse.success;
+            responseData.output =
+              cmdResponse.stdout || cmdResponse.output || "";
+            responseData.error = cmdResponse.error || cmdResponse.stderr || "";
+            responseData.returncode = cmdResponse.returncode;
+
+            // Include parsed output if available
+            if (cmdResponse.parsed_output) {
+              responseData.parsedOutput = cmdResponse.parsed_output;
+            }
+          }
+        } else {
+          // Return just the response without metadata
+          if (
+            typeof parsedResponse === "object" &&
+            parsedResponse !== null &&
+            "success" in parsedResponse
+          ) {
+            responseData = parsedResponse;
+          } else {
+            responseData = { response: parsedResponse };
+          }
         }
 
         returnData.push({
           json: responseData,
+          pairedItem: i,
         });
       } catch (error: any) {
         if (this.continueOnFail()) {
@@ -453,7 +648,9 @@ export class UnixSocketBridge implements INodeType {
               error: error.message,
               success: false,
               timestamp: new Date().toISOString(),
+              itemIndex: i,
             },
+            pairedItem: i,
           });
           continue;
         }
@@ -466,52 +663,30 @@ export class UnixSocketBridge implements INodeType {
 }
 
 /**
- * Helper function for Unix socket communication
+ * Helper function for Unix socket communication with improved robustness
  *
  * Establishes a connection to a Unix domain socket, sends a message,
- * and returns the response. Includes timeout handling and proper
- * cleanup of socket resources.
+ * and returns the response. Includes timeout handling, chunked reading
+ * for large responses, and proper cleanup of socket resources.
  *
  * @param socketPath - Path to the Unix domain socket file
  * @param message - Message to send (typically JSON-formatted command)
  * @param timeoutMs - Connection timeout in milliseconds
+ * @param maxResponseSize - Maximum response size in bytes
  * @returns Promise resolving to the server response as a string
  *
- * @throws {Error} When socket connection fails, times out, or server errors occur
- *
- * @example
- * ```typescript
- * const response = await sendToUnixSocket(
- *   '/tmp/playerctl.sock',
- *   JSON.stringify({ command: 'play' }),
- *   5000
- * );
- * console.log('Server response:', response);
- * ```
- *
- * @example
- * ```typescript
- * // Error handling
- * try {
- *   const response = await sendToUnixSocket('/tmp/socket.sock', message, 5000);
- *   const result = JSON.parse(response);
- * } catch (error) {
- *   if (error.message.includes('timeout')) {
- *     console.log('Server not responding');
- *   } else if (error.message.includes('ENOENT')) {
- *     console.log('Socket file not found');
- *   }
- * }
- * ```
+ * @throws {Error} When socket connection fails, times out, or response too large
  */
 export async function sendToUnixSocket(
   socketPath: string,
   message: string,
-  timeoutMs: number
+  timeoutMs: number,
+  maxResponseSize: number = 1048576
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
     let response = "";
+    let responseBuffer = Buffer.alloc(0);
 
     const timeoutHandle = setTimeout(() => {
       socket.destroy();
@@ -523,28 +698,67 @@ export async function sendToUnixSocket(
     });
 
     socket.on("data", (data: Buffer) => {
-      response += data.toString();
+      // Use buffer concatenation for binary safety
+      responseBuffer = Buffer.concat([responseBuffer, data]);
+
+      // Check size limit
+      if (responseBuffer.length > maxResponseSize) {
+        socket.destroy();
+        clearTimeout(timeoutHandle);
+        reject(new Error(`Response too large (max ${maxResponseSize} bytes)`));
+      }
     });
 
     socket.on("end", () => {
       clearTimeout(timeoutHandle);
-      resolve(response);
+      try {
+        response = responseBuffer.toString("utf-8");
+        resolve(response);
+      } catch (error: any) {
+        reject(new Error(`Failed to decode response: ${error.message}`));
+      }
     });
 
-    socket.on("close", () => {
+    socket.on("close", (hadError: boolean) => {
       clearTimeout(timeoutHandle);
-      if (response) {
+      if (!hadError && responseBuffer.length > 0) {
+        try {
+          response = responseBuffer.toString("utf-8");
+          resolve(response);
+        } catch (error: any) {
+          reject(new Error(`Failed to decode response: ${error.message}`));
+        }
+      } else if (!hadError && response) {
         resolve(response);
-      } else {
+      } else if (!hadError) {
         reject(new Error("Socket closed without response"));
       }
     });
 
     socket.on("error", (error: Error) => {
       clearTimeout(timeoutHandle);
-      reject(new Error(`Socket error: ${error.message}`));
+
+      // Provide more helpful error messages
+      let errorMessage = error.message;
+      if (error.message.includes("ENOENT")) {
+        errorMessage = `Socket not found at ${socketPath}`;
+      } else if (error.message.includes("ECONNREFUSED")) {
+        errorMessage = `Connection refused at ${socketPath} - is the server running?`;
+      } else if (error.message.includes("EACCES")) {
+        errorMessage = `Permission denied accessing ${socketPath}`;
+      } else if (error.message.includes("ETIMEDOUT")) {
+        errorMessage = `Connection timed out to ${socketPath}`;
+      }
+
+      reject(new Error(`Socket error: ${errorMessage}`));
     });
 
-    socket.connect(socketPath);
+    // Connect to socket
+    try {
+      socket.connect(socketPath);
+    } catch (error: any) {
+      clearTimeout(timeoutHandle);
+      reject(new Error(`Failed to connect: ${error.message}`));
+    }
   });
 }

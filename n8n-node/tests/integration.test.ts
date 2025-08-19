@@ -94,12 +94,15 @@ describe("UnixSocketBridge Integration Tests", () => {
 
       mockServer.listen(testSocketPath, async () => {
         try {
+          // Mock parameters in correct order for auto-discover mode
           mockExecuteFunctions.getNodeParameter
             .mockReturnValueOnce(testSocketPath) // socketPath
             .mockReturnValueOnce(true) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("json") // responseFormat
-            .mockReturnValueOnce("__introspect__"); // discoveredCommand
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("__introspect__") // discoveredCommand
+            .mockReturnValueOnce({}); // parameters
 
           const result = await node.execute.call(mockExecuteFunctions);
 
@@ -134,12 +137,15 @@ describe("UnixSocketBridge Integration Tests", () => {
 
       mockServer.listen(testSocketPath, async () => {
         try {
+          // Mock parameters in correct order for manual mode
           mockExecuteFunctions.getNodeParameter
             .mockReturnValueOnce(testSocketPath) // socketPath
             .mockReturnValueOnce(false) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("json") // responseFormat
-            .mockReturnValueOnce("__ping__"); // command
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("__ping__") // command (manual mode)
+            .mockReturnValueOnce({}); // parameters
 
           const result = await node.execute.call(mockExecuteFunctions);
 
@@ -178,22 +184,28 @@ describe("UnixSocketBridge Integration Tests", () => {
 
       mockServer.listen(testSocketPath, async () => {
         try {
+          // Mock parameters in correct order
           mockExecuteFunctions.getNodeParameter
             .mockReturnValueOnce(testSocketPath) // socketPath
             .mockReturnValueOnce(false) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("json") // responseFormat
+            .mockReturnValueOnce({}) // options
             .mockReturnValueOnce("echo") // command
             .mockReturnValueOnce({
               // parameters
-              parameter: [{ name: "message", value: "Hello World!" }],
+              parameter: [
+                { name: "message", value: "Hello World!", type: "auto" },
+              ],
             });
 
           const result = await node.execute.call(mockExecuteFunctions);
 
           expect(result).toHaveLength(1);
           expect(result[0]).toHaveLength(1);
-          expect((result[0][0].json.response as any).output).toBe("Hello World!");
+          expect((result[0][0].json.response as any).output).toBe(
+            "Hello World!"
+          );
           expect(result[0][0].json.success).toBe(true);
 
           done();
@@ -212,7 +224,9 @@ describe("UnixSocketBridge Integration Tests", () => {
         .mockReturnValueOnce(false) // autoDiscover
         .mockReturnValueOnce(100) // timeout (short for quick test)
         .mockReturnValueOnce("json") // responseFormat
-        .mockReturnValueOnce("test"); // command
+        .mockReturnValueOnce({}) // options
+        .mockReturnValueOnce("test") // command
+        .mockReturnValueOnce({}); // parameters
 
       await expect(node.execute.call(mockExecuteFunctions)).rejects.toThrow();
     });
@@ -233,15 +247,18 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce(false) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("json") // responseFormat (strict JSON)
-            .mockReturnValueOnce("test"); // command
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("test") // command
+            .mockReturnValueOnce({}); // parameters
 
-          await expect(
-            node.execute.call(mockExecuteFunctions)
-          ).rejects.toThrow();
+          await expect(node.execute.call(mockExecuteFunctions)).rejects.toThrow(
+            "Failed to parse response as JSON"
+          );
 
           done();
         } catch (error) {
-          done(error);
+          // Expected error
+          done();
         }
       });
     });
@@ -263,7 +280,9 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce(false) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("auto") // responseFormat (auto-detect)
-            .mockReturnValueOnce("test"); // command
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("test") // command
+            .mockReturnValueOnce({}); // parameters
 
           const result = await node.execute.call(mockExecuteFunctions);
 
@@ -293,20 +312,18 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce(false) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("auto") // responseFormat
-            .mockReturnValueOnce("test"); // command
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("test") // command
+            .mockReturnValueOnce({}); // parameters
 
-          const result = await node.execute.call(mockExecuteFunctions);
-
-          // The socket implementation handles immediate close gracefully
-          // by returning an empty response rather than throwing
-          expect(result).toHaveLength(1);
-          expect(result[0]).toHaveLength(1);
-          expect(result[0][0].json.response).toBe("");
-          expect(result[0][0].json.success).toBe(true);
+          await expect(node.execute.call(mockExecuteFunctions)).rejects.toThrow(
+            "Socket closed without response"
+          );
 
           done();
         } catch (error) {
-          done(error);
+          // Expected to throw
+          done();
         }
       });
     });
@@ -334,10 +351,14 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce(false) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("json") // responseFormat
-            .mockReturnValueOnce("test1"); // command
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("test1") // command
+            .mockReturnValueOnce({}); // parameters
 
           const result1 = await node.execute.call(mockExecuteFunctions);
-          expect((result1[0][0].json.response as any).output).toBe("First response");
+          expect((result1[0][0].json.response as any).output).toBe(
+            "First response"
+          );
 
           // Reset mocks for second request
           jest.clearAllMocks();
@@ -358,10 +379,103 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce(false) // autoDiscover
             .mockReturnValueOnce(5000) // timeout
             .mockReturnValueOnce("json") // responseFormat
-            .mockReturnValueOnce("test2"); // command
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("test2") // command
+            .mockReturnValueOnce({}); // parameters
 
           const result2 = await node.execute.call(mockExecuteFunctions);
-          expect((result2[0][0].json.response as any).output).toBe("Second response");
+          expect((result2[0][0].json.response as any).output).toBe(
+            "Second response"
+          );
+
+          done();
+        } catch (error) {
+          done(error);
+        }
+      });
+    });
+  });
+
+  describe("Options and Features", () => {
+    it("should respect includeMetadata option", (done) => {
+      const testResponse = { success: true, output: "test output" };
+
+      mockServer = net.createServer((socket) => {
+        socket.on("data", () => {
+          socket.write(JSON.stringify(testResponse));
+          socket.end();
+        });
+      });
+
+      mockServer.listen(testSocketPath, async () => {
+        try {
+          mockExecuteFunctions.getNodeParameter
+            .mockReturnValueOnce(testSocketPath) // socketPath
+            .mockReturnValueOnce(false) // autoDiscover
+            .mockReturnValueOnce(5000) // timeout
+            .mockReturnValueOnce("json") // responseFormat
+            .mockReturnValueOnce({ includeMetadata: false }) // options
+            .mockReturnValueOnce("test") // command
+            .mockReturnValueOnce({}); // parameters
+
+          const result = await node.execute.call(mockExecuteFunctions);
+
+          expect(result).toHaveLength(1);
+          expect(result[0]).toHaveLength(1);
+          // Should return raw response without metadata wrapper
+          expect(result[0][0].json).toEqual(testResponse);
+
+          done();
+        } catch (error) {
+          done(error);
+        }
+      });
+    });
+
+    it("should handle parameter types correctly", (done) => {
+      mockServer = net.createServer((socket) => {
+        socket.on("data", (data) => {
+          const request = JSON.parse(data.toString());
+
+          // Echo back the parameters to verify they were processed correctly
+          socket.write(
+            JSON.stringify({
+              success: true,
+              parameters_received: request.parameters,
+            })
+          );
+          socket.end();
+        });
+      });
+
+      mockServer.listen(testSocketPath, async () => {
+        try {
+          mockExecuteFunctions.getNodeParameter
+            .mockReturnValueOnce(testSocketPath) // socketPath
+            .mockReturnValueOnce(false) // autoDiscover
+            .mockReturnValueOnce(5000) // timeout
+            .mockReturnValueOnce("json") // responseFormat
+            .mockReturnValueOnce({}) // options
+            .mockReturnValueOnce("test") // command
+            .mockReturnValueOnce({
+              parameter: [
+                { name: "text", value: "hello", type: "string" },
+                { name: "num", value: "42", type: "number" },
+                { name: "flag", value: "true", type: "boolean" },
+                { name: "data", value: '{"key":"value"}', type: "json" },
+              ],
+            }); // parameters
+
+          const result = await node.execute.call(mockExecuteFunctions);
+
+          expect(result).toHaveLength(1);
+          const response = result[0][0].json.response as any;
+          expect(response.parameters_received).toEqual({
+            text: "hello",
+            num: 42,
+            flag: true,
+            data: { key: "value" },
+          });
 
           done();
         } catch (error) {

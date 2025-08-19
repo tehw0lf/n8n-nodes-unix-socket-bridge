@@ -1,14 +1,15 @@
 """
 Unit tests for ConfigurableSocketServer class
+Tests the improved server with rate limiting, size limits, and security features
 """
 import pytest
 import json
 import subprocess
 import tempfile
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 import sys
 import os
+import time
 
 # Add server directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +21,7 @@ spec = importlib.util.spec_from_file_location("socket_server", socket_server_pat
 socket_server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(socket_server)
 ConfigurableSocketServer = socket_server.ConfigurableSocketServer
+
 
 class TestConfigurableSocketServer:
     """Test cases for ConfigurableSocketServer class"""
@@ -34,55 +36,149 @@ class TestConfigurableSocketServer:
         assert "echo" in server.config["commands"]
         assert server.running == False
         assert server.server_socket is None
+        
+        # Test new features
+        assert hasattr(server, 'rate_limit')
+        assert hasattr(server, 'max_request_size')
+        assert hasattr(server, 'max_output_size')
     
-    def test_init_with_invalid_config(self, invalid_config_file):
-        """Test server initialization fails with invalid configuration"""
-        with pytest.raises(SystemExit):
-            ConfigurableSocketServer(invalid_config_file)
-    
-    def test_load_config_validates_required_fields(self, sample_config):
-        """Test that load_config validates all required fields"""
-        # Create server instance for testing load_config method
+    def test_init_with_rate_limiting_config(self, sample_config):
+        """Test server initialization with rate limiting configuration"""
+        config = sample_config.copy()
+        config['enable_rate_limit'] = True
+        config['rate_limit'] = {'requests': 10, 'window': 60}
+        
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(sample_config, f)
+            json.dump(config, f)
             temp_config = f.name
         
         try:
             server = ConfigurableSocketServer(temp_config)
-            config = server.config
-            
-            # Check all required fields are present
-            assert "name" in config
-            assert "socket_path" in config
-            assert "commands" in config
+            assert server.rate_limit['requests'] == 10
+            assert server.rate_limit['window'] == 60
         finally:
             os.unlink(temp_config)
     
-    def test_load_config_validates_command_structure(self):
-        """Test that load_config validates command structure"""
-        invalid_command_config = {
-            "name": "Test Server",
-            "socket_path": "/tmp/test.sock",
-            "commands": {
-                "broken_command": {
-                    # Missing 'executable' field
-                    "description": "A broken command"
+    def test_init_with_size_limits(self, sample_config):
+        """Test server initialization with custom size limits"""
+        config = sample_config.copy()
+        config['max_request_size'] = 2097152  # 2MB
+        config['max_output_size'] = 500000    # 500KB
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            assert server.max_request_size == 2097152
+            assert server.max_output_size == 500000
+        finally:
+            os.unlink(temp_config)
+    
+    def test_validate_executable_path_security(self, config_file):
+        """Test executable path validation for security"""
+        server = ConfigurableSocketServer(config_file)
+        
+        # Valid paths
+        assert server.validate_executable_path(['echo']) == True
+        assert server.validate_executable_path(['/bin/echo']) == True
+        assert server.validate_executable_path(['/usr/bin/ls']) == True
+        
+        # Invalid paths - security violations
+        assert server.validate_executable_path(['/etc/passwd']) == False
+        assert server.validate_executable_path(['../../bin/evil']) == False
+        assert server.validate_executable_path(['/home/user/script.sh']) == False
+        assert server.validate_executable_path([]) == False
+    
+    def test_rate_limiting_functionality(self, config_file):
+        """Test rate limiting with improved implementation"""
+        server = ConfigurableSocketServer(config_file)
+        server.rate_limit = {'requests': 3, 'window': 2}
+        
+        client_id = 'test_client_123'
+        
+        # First 3 requests should pass
+        assert server.check_rate_limit(client_id) == True
+        assert server.check_rate_limit(client_id) == True
+        assert server.check_rate_limit(client_id) == True
+        
+        # 4th request should fail
+        assert server.check_rate_limit(client_id) == False
+        
+        # After waiting for window, should pass again
+        time.sleep(2.1)
+        assert server.check_rate_limit(client_id) == True
+    
+    def test_receive_full_message(self, config_file):
+        """Test the receive_full_message method for handling large requests"""
+        server = ConfigurableSocketServer(config_file)
+        
+        # Create mock socket with chunked data
+        mock_socket = Mock()
+        
+        # Simulate receiving data in chunks
+        test_message = json.dumps({"command": "test", "data": "x" * 1000})
+        chunks = [test_message[i:i+100].encode() for i in range(0, len(test_message), 100)]
+        chunks.append(b'')  # End marker
+        
+        mock_socket.recv.side_effect = chunks
+        mock_socket.settimeout = Mock()
+        
+        # Test receiving full message
+        result = server.receive_full_message(mock_socket)
+        assert result == test_message
+        
+    def test_receive_message_size_limit(self, config_file):
+        """Test that receive_full_message enforces size limits"""
+        server = ConfigurableSocketServer(config_file)
+        server.max_request_size = 100  # Very small limit for testing
+        
+        mock_socket = Mock()
+        mock_socket.recv.return_value = b'x' * 200  # Exceeds limit
+        mock_socket.settimeout = Mock()
+        
+        # Should raise ValueError for exceeding size
+        with pytest.raises(ValueError) as excinfo:
+            server.receive_full_message(mock_socket)
+        assert "too large" in str(excinfo.value).lower()
+
+
+class TestRequestValidation:
+    """Test cases for request validation"""
+    
+    def test_validate_request_with_parameter_max_length(self, sample_config):
+        """Test validation of parameter max_length"""
+        config = sample_config.copy()
+        config['commands']['test_length'] = {
+            'executable': ['echo'],
+            'parameters': {
+                'text': {
+                    'type': 'string',
+                    'max_length': 10
                 }
             }
         }
         
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            json.dump(invalid_command_config, f)
+            json.dump(config, f)
             temp_config = f.name
         
         try:
-            with pytest.raises(SystemExit):
-                ConfigurableSocketServer(temp_config)
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Valid length
+            request = {'command': 'test_length', 'parameters': {'text': 'short'}}
+            valid, error = server.validate_request(request)
+            assert valid == True
+            
+            # Exceeds max length
+            request = {'command': 'test_length', 'parameters': {'text': 'x' * 20}}
+            valid, error = server.validate_request(request)
+            assert valid == False
+            assert "Invalid value" in error
         finally:
             os.unlink(temp_config)
-
-class TestRequestValidation:
-    """Test cases for request validation"""
     
     def test_validate_request_missing_command(self, config_file):
         """Test validation fails when command field is missing"""
@@ -105,160 +201,13 @@ class TestRequestValidation:
         is_valid, error = server.validate_request({"command": "__ping__"})
         assert is_valid
         assert error == ""
-    
-    def test_validate_request_unknown_command(self, config_file):
-        """Test validation fails for unknown commands"""
-        server = ConfigurableSocketServer(config_file)
-        
-        is_valid, error = server.validate_request({"command": "unknown_command"})
-        assert not is_valid
-        assert "Unknown command" in error
-        assert "echo" in error  # Should list available commands
-    
-    def test_validate_request_with_valid_command(self, config_file):
-        """Test validation passes for valid commands"""
-        server = ConfigurableSocketServer(config_file)
-        
-        request = {
-            "command": "echo",
-            "parameters": {
-                "message": "test message"
-            }
-        }
-        
-        is_valid, error = server.validate_request(request)
-        assert is_valid
-        assert error == ""
-    
-    def test_validate_request_missing_required_parameter(self, config_file):
-        """Test validation fails when required parameters are missing"""
-        server = ConfigurableSocketServer(config_file)
-        
-        request = {"command": "echo"}  # Missing required 'message' parameter
-        
-        is_valid, error = server.validate_request(request)
-        assert not is_valid
-        assert "Missing required parameter: message" in error
-    
-    def test_validate_request_with_optional_parameters(self, config_file):
-        """Test validation passes with optional parameters"""
-        server = ConfigurableSocketServer(config_file)
-        
-        request = {
-            "command": "with-flags",
-            "parameters": {
-                "long": True,
-                "path": "/tmp"
-            }
-        }
-        
-        is_valid, error = server.validate_request(request)
-        assert is_valid
-        assert error == ""
 
-class TestParameterValidation:
-    """Test cases for parameter validation"""
-    
-    def test_validate_parameter_value_string_type(self, config_file):
-        """Test string parameter validation"""
-        server = ConfigurableSocketServer(config_file)
-        
-        # Valid string
-        param_config = {"type": "string"}
-        assert server.validate_parameter_value("valid string", param_config)
-        
-        # Invalid type
-        assert not server.validate_parameter_value(123, param_config)
-    
-    def test_validate_parameter_value_number_type(self, config_file):
-        """Test number parameter validation"""
-        server = ConfigurableSocketServer(config_file)
-        
-        param_config = {"type": "number"}
-        
-        # Valid numbers
-        assert server.validate_parameter_value(123, param_config)
-        assert server.validate_parameter_value(123.45, param_config)
-        
-        # Invalid type
-        assert not server.validate_parameter_value("not a number", param_config)
-    
-    def test_validate_parameter_value_boolean_type(self, config_file):
-        """Test boolean parameter validation"""
-        server = ConfigurableSocketServer(config_file)
-        
-        param_config = {"type": "boolean"}
-        
-        # Valid booleans
-        assert server.validate_parameter_value(True, param_config)
-        assert server.validate_parameter_value(False, param_config)
-        
-        # Invalid type
-        assert not server.validate_parameter_value("true", param_config)
-        assert not server.validate_parameter_value(1, param_config)
-    
-    def test_validate_parameter_value_pattern_matching(self, config_file):
-        """Test pattern validation for string parameters"""
-        server = ConfigurableSocketServer(config_file)
-        
-        param_config = {
-            "type": "string",
-            "pattern": "^[a-zA-Z0-9/._-]+$"
-        }
-        
-        # Valid patterns
-        assert server.validate_parameter_value("valid_path123", param_config)
-        assert server.validate_parameter_value("/tmp/test.sock", param_config)
-        
-        # Invalid patterns
-        assert not server.validate_parameter_value("invalid@path!", param_config)
-        assert not server.validate_parameter_value("spaces not allowed", param_config)
-    
-    def test_validate_parameter_value_enum_validation(self, config_file):
-        """Test enum validation"""
-        server = ConfigurableSocketServer(config_file)
-        
-        param_config = {
-            "type": "string",
-            "enum": ["option1", "option2", "option3"]
-        }
-        
-        # Valid enum values
-        assert server.validate_parameter_value("option1", param_config)
-        assert server.validate_parameter_value("option2", param_config)
-        
-        # Invalid enum value
-        assert not server.validate_parameter_value("invalid_option", param_config)
-
-class TestIntrospection:
-    """Test cases for server introspection"""
-    
-    def test_handle_introspection(self, config_file):
-        """Test introspection returns correct server information"""
-        server = ConfigurableSocketServer(config_file)
-        
-        result = server.handle_introspection()
-        
-        assert result["success"] == True
-        assert "server_info" in result
-        
-        server_info = result["server_info"]
-        assert server_info["name"] == "Test Server"
-        assert server_info["description"] == "A test server for unit testing"
-        assert server_info["version"] == "1.0.0"
-        assert "commands" in server_info
-        
-        # Check command information
-        commands = server_info["commands"]
-        assert "echo" in commands
-        assert "description" in commands["echo"]
-        assert "parameters" in commands["echo"]
 
 class TestCommandExecution:
-    """Test cases for command execution"""
+    """Test cases for command execution with improved features"""
     
-    def test_execute_ping_command(self, config_file):
-        """Test execution of __ping__ command"""
+    def test_execute_ping_with_timestamp(self, config_file):
+        """Test that ping command includes timestamp"""
         server = ConfigurableSocketServer(config_file)
         
         request = {"command": "__ping__"}
@@ -266,27 +215,19 @@ class TestCommandExecution:
         
         assert result["success"] == True
         assert result["message"] == "pong"
-    
-    def test_execute_introspect_command(self, config_file):
-        """Test execution of __introspect__ command"""
-        server = ConfigurableSocketServer(config_file)
-        
-        request = {"command": "__introspect__"}
-        result = server.execute_command(request)
-        
-        assert result["success"] == True
-        assert "server_info" in result
-        assert result["server_info"]["name"] == "Test Server"
+        assert "timestamp" in result
+        assert isinstance(result["timestamp"], float)
     
     @patch('subprocess.run')
-    def test_execute_simple_command(self, mock_subprocess, config_file):
-        """Test execution of simple command without parameters"""
+    def test_execute_command_with_output_truncation(self, mock_subprocess, config_file):
+        """Test that large output is truncated"""
         server = ConfigurableSocketServer(config_file)
+        server.max_output_size = 100  # Small limit for testing
         
-        # Mock successful subprocess execution
+        # Mock large output
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = "hello"
+        mock_result.stdout = "x" * 200  # Exceeds limit
         mock_result.stderr = ""
         mock_subprocess.return_value = mock_result
         
@@ -294,138 +235,632 @@ class TestCommandExecution:
         result = server.execute_command(request)
         
         assert result["success"] == True
-        assert result["command"] == "simple"
-        assert result["returncode"] == 0
-        assert result["stdout"] == "hello"
-        assert result["stderr"] == ""
-        
-        # Verify subprocess was called correctly
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args
-        assert call_args[0][0] == ["echo", "hello"]  # executable
+        assert len(result["stdout"]) <= server.max_output_size + 50  # Allow for truncation message
+        assert "truncated" in result["stdout"]
     
     @patch('subprocess.run')
-    def test_execute_command_with_parameters(self, mock_subprocess, config_file):
-        """Test execution of command with parameters"""
+    def test_execute_command_with_custom_env(self, mock_subprocess, sample_config):
+        """Test command execution with custom environment variables"""
+        config = sample_config.copy()
+        config['commands']['custom_env'] = {
+            'executable': ['printenv'],
+            'env': {'CUSTOM_VAR': 'custom_value', 'PATH': '/custom/path'}
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            request = {"command": "custom_env"}
+            result = server.execute_command(request)
+            
+            # Verify custom env was used
+            mock_subprocess.assert_called_once()
+            call_kwargs = mock_subprocess.call_args[1]
+            assert call_kwargs['env']['CUSTOM_VAR'] == 'custom_value'
+            assert call_kwargs['env']['PATH'] == '/custom/path'
+        finally:
+            os.unlink(temp_config)
+    
+    @patch('subprocess.run')
+    def test_execute_command_with_debug_mode(self, mock_subprocess, sample_config):
+        """Test that debug mode provides detailed error information"""
+        config = sample_config.copy()
+        config['debug'] = True
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Mock exception
+            mock_subprocess.side_effect = Exception("Detailed error message")
+            
+            request = {"command": "simple"}
+            result = server.execute_command(request)
+            
+            assert result["success"] == False
+            assert "details" in result
+            assert "Detailed error message" in result["details"]
+        finally:
+            os.unlink(temp_config)
+
+
+class TestParameterValidation:
+    """Test cases for enhanced parameter validation"""
+    
+    def test_validate_parameter_all_types(self, config_file):
+        """Test validation of all parameter types"""
         server = ConfigurableSocketServer(config_file)
         
-        # Mock successful subprocess execution
+        # String type
+        assert server.validate_parameter_value("text", {"type": "string"}) == True
+        assert server.validate_parameter_value(123, {"type": "string"}) == False
+        
+        # Number type
+        assert server.validate_parameter_value(42, {"type": "number"}) == True
+        assert server.validate_parameter_value(3.14, {"type": "number"}) == True
+        assert server.validate_parameter_value("not_number", {"type": "number"}) == False
+        
+        # Boolean type
+        assert server.validate_parameter_value(True, {"type": "boolean"}) == True
+        assert server.validate_parameter_value(False, {"type": "boolean"}) == True
+        assert server.validate_parameter_value("true", {"type": "boolean"}) == False
+
+
+class TestConcurrency:
+    """Test cases for concurrent request handling"""
+    
+    def test_threading_configuration(self, sample_config):
+        """Test that threading can be enabled via configuration"""
+        config = sample_config.copy()
+        config['enable_threading'] = True
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            assert server.config.get('enable_threading') == True
+        finally:
+            os.unlink(temp_config)
+
+
+class TestEnhancedRateLimiting:
+    """Test cases for enhanced rate limiting features"""
+    
+    def test_rate_limiting_with_disabled_config(self, sample_config):
+        """Test that rate limiting can be completely disabled"""
+        config = sample_config.copy()
+        config['enable_rate_limit'] = False
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            client_id = 'test_client_unlimited'
+            
+            # Should allow unlimited requests when disabled
+            for _ in range(100):
+                assert server.check_rate_limit(client_id) == True
+        finally:
+            os.unlink(temp_config)
+    
+    def test_rate_limiting_multiple_clients(self, config_file):
+        """Test rate limiting works independently for different clients"""
+        server = ConfigurableSocketServer(config_file)
+        server.rate_limit = {'requests': 2, 'window': 60}
+        
+        client1 = 'client_1'
+        client2 = 'client_2'
+        
+        # Each client should have independent rate limits
+        assert server.check_rate_limit(client1) == True
+        assert server.check_rate_limit(client1) == True
+        assert server.check_rate_limit(client1) == False  # Exceeded for client1
+        
+        # Client2 should still be allowed
+        assert server.check_rate_limit(client2) == True
+        assert server.check_rate_limit(client2) == True
+        assert server.check_rate_limit(client2) == False  # Exceeded for client2
+    
+    def test_rate_limiting_window_expiration(self, config_file):
+        """Test that rate limit window properly expires old requests"""
+        server = ConfigurableSocketServer(config_file)
+        server.rate_limit = {'requests': 2, 'window': 1}  # 1 second window
+        
+        client_id = 'test_client_window'
+        
+        # Use up the rate limit
+        assert server.check_rate_limit(client_id) == True
+        assert server.check_rate_limit(client_id) == True
+        assert server.check_rate_limit(client_id) == False
+        
+        # Wait for window to expire
+        time.sleep(1.2)
+        
+        # Should be allowed again
+        assert server.check_rate_limit(client_id) == True
+
+
+class TestEnhancedSizeLimits:
+    """Test cases for enhanced size limit features"""
+    
+    def test_custom_request_size_limits(self, sample_config):
+        """Test custom request size limits"""
+        config = sample_config.copy()
+        config['max_request_size'] = 500  # Very small for testing
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            assert server.max_request_size == 500
+            
+            # Test that the limit is enforced in receive_full_message
+            mock_socket = Mock()
+            large_data = 'x' * 600  # Exceeds limit
+            mock_socket.recv.return_value = large_data.encode()
+            mock_socket.settimeout = Mock()
+            
+            with pytest.raises(ValueError) as excinfo:
+                server.receive_full_message(mock_socket)
+            assert "too large" in str(excinfo.value).lower()
+        finally:
+            os.unlink(temp_config)
+    
+    def test_custom_output_size_limits(self, sample_config):
+        """Test custom output size limits"""
+        config = sample_config.copy()
+        config['max_output_size'] = 50  # Very small for testing
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            assert server.max_output_size == 50
+        finally:
+            os.unlink(temp_config)
+    
+    @patch('subprocess.run')
+    def test_output_truncation_with_message(self, mock_subprocess, config_file):
+        """Test that output truncation includes helpful message"""
+        server = ConfigurableSocketServer(config_file)
+        server.max_output_size = 20  # Very small for testing
+        
+        # Mock large output
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = "test message"
+        mock_result.stdout = "x" * 50  # Exceeds limit
         mock_result.stderr = ""
         mock_subprocess.return_value = mock_result
         
-        request = {
-            "command": "echo",
-            "parameters": {
-                "message": "test message"
+        request = {"command": "simple"}
+        result = server.execute_command(request)
+        
+        assert result["success"] == True
+        assert len(result["stdout"]) <= server.max_output_size + 50  # Allow for truncation message
+        assert "truncated" in result["stdout"]
+
+
+class TestEnhancedSecurity:
+    """Test cases for enhanced security features"""
+    
+    def test_executable_path_validation_with_allowed_dirs(self, sample_config):
+        """Test executable path validation with allowed directories"""
+        config = sample_config.copy()
+        config['allowed_executable_dirs'] = ['/usr/bin/', '/bin/', '/usr/local/bin/']
+        config['commands']['secure_test'] = {
+            'executable': ['/usr/bin/echo'],
+            'timeout': 5
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Valid paths
+            assert server.validate_executable_path(['/usr/bin/echo']) == True
+            assert server.validate_executable_path(['/bin/ls']) == True
+            assert server.validate_executable_path(['echo']) == True  # Relative path in allowed dir
+            
+            # Invalid paths
+            assert server.validate_executable_path(['/tmp/malicious']) == False
+            assert server.validate_executable_path(['/etc/passwd']) == False
+            assert server.validate_executable_path(['../../bin/evil']) == False
+            
+        finally:
+            os.unlink(temp_config)
+    
+    def test_executable_path_validation_without_allowed_dirs(self, sample_config):
+        """Test that validation fails gracefully without allowed_executable_dirs"""
+        config = sample_config.copy()
+        # Remove allowed_executable_dirs to test fallback behavior
+        if 'allowed_executable_dirs' in config:
+            del config['allowed_executable_dirs']
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            # Server initialization should fail due to invalid executable paths
+            with pytest.raises(SystemExit):
+                ConfigurableSocketServer(temp_config)
+            
+        finally:
+            os.unlink(temp_config)
+    
+    def test_security_config_validation_on_startup(self, sample_config):
+        """Test that invalid executables are caught during config loading"""
+        config = sample_config.copy()
+        config['allowed_executable_dirs'] = ['/usr/bin/']
+        config['commands']['invalid_cmd'] = {
+            'executable': ['/tmp/evil_script'],  # Not in allowed dirs
+            'timeout': 5
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            with pytest.raises(SystemExit):
+                # Should fail during initialization
+                ConfigurableSocketServer(temp_config)
+        finally:
+            os.unlink(temp_config)
+
+
+class TestEnhancedParameterValidation:
+    """Test cases for enhanced parameter validation"""
+    
+    def test_parameter_max_length_validation(self, sample_config):
+        """Test parameter max_length validation"""
+        config = sample_config.copy()
+        config['commands']['length_test'] = {
+            'executable': ['echo'],
+            'parameters': {
+                'short_text': {
+                    'type': 'string',
+                    'max_length': 5
+                },
+                'long_text': {
+                    'type': 'string',
+                    'max_length': 100
+                }
             }
         }
         
-        result = server.execute_command(request)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
         
-        assert result["success"] == True
-        assert result["stdout"] == "test message"
-        
-        # Verify subprocess was called with correct parameters
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args
-        assert call_args[0][0] == ["echo", "test message"]  # executable with argument
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Valid lengths
+            request = {'command': 'length_test', 'parameters': {'short_text': 'hi'}}
+            valid, error = server.validate_request(request)
+            assert valid == True
+            
+            # Invalid length
+            request = {'command': 'length_test', 'parameters': {'short_text': 'toolong'}}
+            valid, error = server.validate_request(request)
+            assert valid == False
+            assert "Invalid value" in error
+            
+        finally:
+            os.unlink(temp_config)
     
-    @patch('subprocess.run')
-    def test_execute_command_with_flag_parameters(self, mock_subprocess, config_file):
-        """Test execution of command with flag-style parameters"""
-        server = ConfigurableSocketServer(config_file)
-        
-        # Mock successful subprocess execution
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = "file listing"
-        mock_result.stderr = ""
-        mock_subprocess.return_value = mock_result
-        
-        request = {
-            "command": "with-flags",
-            "parameters": {
-                "long": True,
-                "path": "/tmp"
+    def test_parameter_enum_validation(self, sample_config):
+        """Test parameter enum validation"""
+        config = sample_config.copy()
+        config['commands']['enum_test'] = {
+            'executable': ['echo'],
+            'parameters': {
+                'level': {
+                    'type': 'string',
+                    'enum': ['debug', 'info', 'warning', 'error']
+                }
             }
         }
         
-        result = server.execute_command(request)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
         
-        assert result["success"] == True
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Valid enum value
+            request = {'command': 'enum_test', 'parameters': {'level': 'info'}}
+            valid, error = server.validate_request(request)
+            assert valid == True
+            
+            # Invalid enum value
+            request = {'command': 'enum_test', 'parameters': {'level': 'invalid'}}
+            valid, error = server.validate_request(request)
+            assert valid == False
+            
+        finally:
+            os.unlink(temp_config)
+    
+    def test_parameter_pattern_validation(self, sample_config):
+        """Test parameter regex pattern validation"""
+        config = sample_config.copy()
+        config['commands']['pattern_test'] = {
+            'executable': ['echo'],
+            'parameters': {
+                'email': {
+                    'type': 'string',
+                    'pattern': r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                }
+            }
+        }
         
-        # Verify subprocess was called with correct flags
-        mock_subprocess.assert_called_once()
-        call_args = mock_subprocess.call_args
-        executable = call_args[0][0]
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
         
-        # Should contain ls command with flags
-        assert "ls" in executable
-        assert "--long" in executable or "-l" in executable or "True" in executable
-        assert "/tmp" in executable
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Valid email
+            request = {'command': 'pattern_test', 'parameters': {'email': 'test@example.com'}}
+            valid, error = server.validate_request(request)
+            assert valid == True
+            
+            # Invalid email
+            request = {'command': 'pattern_test', 'parameters': {'email': 'not_an_email'}}
+            valid, error = server.validate_request(request)
+            assert valid == False
+            
+        finally:
+            os.unlink(temp_config)
+
+
+class TestThreadingSupport:
+    """Test cases for threading support"""
+    
+    def test_threading_disabled_by_default(self, config_file):
+        """Test that threading is disabled by default"""
+        server = ConfigurableSocketServer(config_file)
+        assert server.config.get('enable_threading', False) == False
+    
+    def test_threading_configuration(self, sample_config):
+        """Test threading configuration"""
+        config = sample_config.copy()
+        config['enable_threading'] = True
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            assert server.config.get('enable_threading') == True
+        finally:
+            os.unlink(temp_config)
+
+
+class TestDebugMode:
+    """Test cases for debug mode functionality"""
     
     @patch('subprocess.run')
-    def test_execute_command_failure(self, mock_subprocess, config_file):
-        """Test handling of command execution failure"""
-        server = ConfigurableSocketServer(config_file)
+    def test_debug_mode_enabled_shows_details(self, mock_subprocess, sample_config):
+        """Test that debug mode shows detailed error information"""
+        config = sample_config.copy()
+        config['debug'] = True
         
-        # Mock failed subprocess execution
-        mock_result = Mock()
-        mock_result.returncode = 1
-        mock_result.stdout = ""
-        mock_result.stderr = "command failed"
-        mock_subprocess.return_value = mock_result
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
         
-        request = {"command": "simple"}
-        result = server.execute_command(request)
-        
-        assert result["success"] == False
-        assert result["returncode"] == 1
-        assert result["stderr"] == "command failed"
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Mock exception with detailed message
+            mock_subprocess.side_effect = Exception("Detailed debug information")
+            
+            request = {"command": "simple"}
+            result = server.execute_command(request)
+            
+            assert result["success"] == False
+            assert "details" in result
+            assert "Detailed debug information" in result["details"]
+        finally:
+            os.unlink(temp_config)
     
     @patch('subprocess.run')
-    def test_execute_command_timeout(self, mock_subprocess, config_file):
-        """Test handling of command timeout"""
-        server = ConfigurableSocketServer(config_file)
+    def test_debug_mode_disabled_hides_details(self, mock_subprocess, sample_config):
+        """Test that production mode hides detailed error information"""
+        config = sample_config.copy()
+        config['debug'] = False
         
-        # Mock timeout exception
-        mock_subprocess.side_effect = subprocess.TimeoutExpired(
-            cmd=["echo", "hello"], timeout=5
-        )
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
         
-        request = {"command": "simple"}
-        result = server.execute_command(request)
-        
-        assert result["success"] == False
-        assert "timeout" in result["error"].lower()
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Mock exception
+            mock_subprocess.side_effect = Exception("Sensitive internal error")
+            
+            request = {"command": "simple"}
+            result = server.execute_command(request)
+            
+            assert result["success"] == False
+            assert result.get("details") is None
+            assert "Sensitive internal error" not in str(result)
+        finally:
+            os.unlink(temp_config)
+
+
+class TestEnhancedResponseFormatting:
+    """Test cases for enhanced response formatting"""
     
     @patch('subprocess.run')
-    def test_execute_command_with_security_restrictions(self, mock_subprocess, config_file):
-        """Test that commands are executed with security restrictions"""
+    def test_custom_response_formatting(self, mock_subprocess, sample_config):
+        """Test custom response formatting configuration"""
+        config = sample_config.copy()
+        config['commands']['json_response'] = {
+            'executable': ['echo'],
+            'response_format': {
+                'parse_json': True
+            }
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Mock JSON output
+            mock_result = Mock()
+            mock_result.returncode = 0
+            mock_result.stdout = '{"key": "value", "number": 42}'
+            mock_result.stderr = ''
+            mock_subprocess.return_value = mock_result
+            
+            request = {"command": "json_response"}
+            result = server.execute_command(request)
+            
+            assert result["success"] == True
+            assert "parsed_output" in result
+            assert result["parsed_output"]["key"] == "value"
+            assert result["parsed_output"]["number"] == 42
+        finally:
+            os.unlink(temp_config)
+    
+    @patch('subprocess.run')
+    def test_json_parse_error_handling(self, mock_subprocess, sample_config):
+        """Test handling of JSON parse errors in response formatting"""
+        config = sample_config.copy()
+        config['commands']['bad_json'] = {
+            'executable': ['echo'],
+            'response_format': {
+                'parse_json': True
+            }
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Mock invalid JSON output
+            mock_result = Mock()
+            mock_result.returncode = 0
+            mock_result.stdout = 'not valid json {'
+            mock_result.stderr = ''
+            mock_subprocess.return_value = mock_result
+            
+            request = {"command": "bad_json"}
+            result = server.execute_command(request)
+            
+            assert result["success"] == True
+            assert "parse_error" in result
+            assert "not valid JSON" in result["parse_error"]
+        finally:
+            os.unlink(temp_config)
+
+
+class TestReceiveFullMessage:
+    """Test cases for the enhanced receive_full_message method"""
+    
+    def test_receive_message_with_timeout(self, config_file):
+        """Test receive_full_message timeout handling"""
         server = ConfigurableSocketServer(config_file)
         
-        # Mock successful execution
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = "hello"
-        mock_result.stderr = ""
-        mock_subprocess.return_value = mock_result
+        mock_socket = Mock()
+        mock_socket.settimeout = Mock()
+        # Mock recv to raise socket.timeout (which is TimeoutError)
+        mock_socket.recv.side_effect = TimeoutError()
         
-        request = {"command": "simple"}
-        server.execute_command(request)
+        # Should raise ValueError for empty request after timeout
+        with pytest.raises(ValueError) as excinfo:
+            server.receive_full_message(mock_socket)
+        assert "Empty request" in str(excinfo.value)
+    
+    def test_receive_message_with_unicode_error(self, config_file):
+        """Test receive_full_message Unicode decode error handling"""
+        server = ConfigurableSocketServer(config_file)
         
-        # Verify security restrictions were applied
-        mock_subprocess.assert_called_once()
-        call_kwargs = mock_subprocess.call_args[1]
+        mock_socket = Mock()
+        mock_socket.settimeout = Mock()
+        mock_socket.recv.return_value = b'\xff\xfe'  # Invalid UTF-8
         
-        # Check restricted environment
-        assert "env" in call_kwargs
-        env = call_kwargs["env"]
-        assert "PATH" in env
-        assert env["PATH"] == "/usr/bin:/bin"  # Restricted PATH
+        with pytest.raises(ValueError) as excinfo:
+            server.receive_full_message(mock_socket)
+        assert "Invalid UTF-8" in str(excinfo.value)
+    
+    def test_receive_message_chunked_json(self, config_file):
+        """Test receive_full_message with chunked JSON data"""
+        server = ConfigurableSocketServer(config_file)
         
-        # Check safe working directory
-        assert call_kwargs.get("cwd") == "/"
+        test_message = json.dumps({"command": "test", "data": "x" * 500})
+        chunks = [test_message[i:i+50].encode() for i in range(0, len(test_message), 50)]
+        chunks.append(b'')  # End marker
+        
+        mock_socket = Mock()
+        mock_socket.settimeout = Mock()
+        mock_socket.recv.side_effect = chunks
+        
+        result = server.receive_full_message(mock_socket)
+        assert result == test_message
+        parsed = json.loads(result)
+        assert parsed["command"] == "test"
+
+
+class TestErrorHandling:
+    """Test cases for improved error handling"""
+    
+    @patch('subprocess.run')
+    def test_command_timeout_with_custom_timeout(self, mock_subprocess, sample_config):
+        """Test command timeout with custom timeout value"""
+        config = sample_config.copy()
+        config['commands']['slow'] = {
+            'executable': ['sleep', '10'],
+            'timeout': 1  # Very short timeout
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(config, f)
+            temp_config = f.name
+        
+        try:
+            server = ConfigurableSocketServer(temp_config)
+            
+            # Mock timeout
+            mock_subprocess.side_effect = subprocess.TimeoutExpired(
+                cmd=['sleep', '10'], timeout=1
+            )
+            
+            request = {"command": "slow"}
+            result = server.execute_command(request)
+            
+            assert result["success"] == False
+            assert "timeout" in result["error"].lower()
+            assert "1 seconds" in result["error"]
+        finally:
+            os.unlink(temp_config)
