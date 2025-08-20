@@ -12,13 +12,22 @@ describe("UnixSocketBridge Authentication Field", () => {
   });
 
   describe("Node Properties", () => {
+    test("should include credentials support", () => {
+      const credentials = node.description.credentials;
+      
+      expect(credentials).toBeDefined();
+      expect(credentials).toHaveLength(1);
+      expect(credentials?.[0].name).toBe("httpHeaderAuth");
+      expect(credentials?.[0].required).toBe(false);
+    });
+
     test("should include auth token field in node properties", () => {
       const properties = node.description.properties;
       
       const authTokenProperty = properties.find(prop => prop.name === "authToken");
       
       expect(authTokenProperty).toBeDefined();
-      expect(authTokenProperty?.displayName).toBe("Authentication Token");
+      expect(authTokenProperty?.displayName).toBe("API Token (Deprecated)");
       expect(authTokenProperty?.type).toBe("string");
       expect(authTokenProperty?.required).toBe(false);
       expect(authTokenProperty?.default).toBe("");
@@ -124,6 +133,8 @@ describe("UnixSocketBridge Authentication Field", () => {
       
       expect(authTokenProperty?.description).toContain("authentication");
       expect(authTokenProperty?.description).toContain("disabled");
+      expect(authTokenProperty?.description).toContain("Deprecated");
+      expect(authTokenProperty?.description).toContain("credentials");
     });
   });
 });

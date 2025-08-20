@@ -88,6 +88,12 @@ export class UnixSocketBridge implements INodeType {
     },
     inputs: [NodeConnectionType.Main],
     outputs: [NodeConnectionType.Main],
+    credentials: [
+      {
+        name: "httpHeaderAuth",
+        required: false,
+      },
+    ],
     properties: [
       {
         displayName: "Socket Path",
@@ -99,7 +105,7 @@ export class UnixSocketBridge implements INodeType {
         required: true,
       },
       {
-        displayName: "Authentication Token",
+        displayName: "API Token (Deprecated)",
         name: "authToken",
         type: "string",
         typeOptions: {
@@ -107,7 +113,7 @@ export class UnixSocketBridge implements INodeType {
         },
         default: "",
         placeholder: "Optional authentication token",
-        description: "Authentication token for the server (leave empty if authentication is disabled)",
+        description: "⚠️ Deprecated: Please use credentials instead. Authentication token for the server (leave empty if authentication is disabled)",
         required: false,
       },
       {
@@ -324,8 +330,28 @@ export class UnixSocketBridge implements INodeType {
         this: ILoadOptionsFunctions
       ): Promise<INodePropertyOptions[]> {
         const socketPath = this.getNodeParameter("socketPath") as string;
-        const authToken = this.getNodeParameter("authToken", "") as string;
         const timeout = 5000;
+
+        // Get authentication token with auto-detection (credentials first, then fallback to deprecated field)
+        let authToken: string | undefined;
+
+        // 1. Try credentials first
+        try {
+          const credentials = await this.getCredentials('httpHeaderAuth');
+          if (credentials && credentials.value) {
+            authToken = credentials.value as string;
+          }
+        } catch (error) {
+          // Credentials not configured - that's OK, we'll try the old field
+        }
+
+        // 2. Falls keine Credentials, nutze das alte Textfeld
+        if (!authToken) {
+          const deprecatedToken = this.getNodeParameter("authToken", "") as string;
+          if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
+            authToken = deprecatedToken.trim();
+          }
+        }
 
         // Provide immediate feedback
         if (!socketPath || socketPath.trim() === "") {
@@ -339,7 +365,7 @@ export class UnixSocketBridge implements INodeType {
           };
           
           // Add auth token if provided
-          if (authToken && typeof authToken === "string" && authToken.trim() !== "") {
+          if (authToken && authToken.trim() !== "") {
             introspectionRequest.auth_token = authToken.trim();
           }
 
@@ -510,8 +536,26 @@ export class UnixSocketBridge implements INodeType {
           }
         }
 
-        // Get authentication token
-        const authToken = this.getNodeParameter("authToken", i, "") as string;
+        // Get authentication token with auto-detection (credentials first, then fallback to deprecated field)
+        let authToken: string | undefined;
+
+        // 1. Try credentials first
+        try {
+          const credentials = await this.getCredentials('httpHeaderAuth');
+          if (credentials && credentials.value) {
+            authToken = credentials.value as string;
+          }
+        } catch (error) {
+          // Credentials not configured - that's OK, we'll try the old field
+        }
+
+        // 2. Falls keine Credentials, nutze das alte Textfeld
+        if (!authToken) {
+          const deprecatedToken = this.getNodeParameter("authToken", i, "") as string;
+          if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
+            authToken = deprecatedToken.trim();
+          }
+        }
         
         // Build the request
         const jsonMessage: SocketCommand = { 
@@ -520,7 +564,7 @@ export class UnixSocketBridge implements INodeType {
         };
         
         // Add auth token if provided
-        if (authToken && typeof authToken === "string" && authToken.trim() !== "") {
+        if (authToken && authToken.trim() !== "") {
           jsonMessage.auth_token = authToken.trim();
         }
 
