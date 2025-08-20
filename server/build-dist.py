@@ -3,23 +3,65 @@
 Build script for Unix Socket Bridge server distribution.
 
 Creates a clean production distribution with only the necessary files
-for deployment and operation.
+for deployment and operation, with version management and archive creation.
 """
 
 import os
 import shutil
 import sys
+import tarfile
+import json
+import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def get_version():
+    """Extract version from pyproject.toml."""
+    server_dir = Path(__file__).parent
+    pyproject_path = server_dir / "pyproject.toml"
+    
+    if not pyproject_path.exists():
+        print("Warning: pyproject.toml not found, using default version 1.0.0")
+        return "1.0.0"
+    
+    try:
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+            return data.get("project", {}).get("version", "1.0.0")
+    except Exception as e:
+        print(f"Warning: Failed to read version from pyproject.toml: {e}")
+        return "1.0.0"
+
+
+def create_version_info(version: str, dist_dir: Path):
+    """Create version information file."""
+    version_info = {
+        "version": version,
+        "build_date": datetime.now(timezone.utc).isoformat(),
+        "component": "unix-socket-bridge-server"
+    }
+    
+    version_file = dist_dir / "version.json"
+    with open(version_file, "w") as f:
+        json.dump(version_info, f, indent=2)
+    
+    print(f"  Created: version.json (v{version})")
+    return version_info
+
 
 
 def main():
     """Build the distribution package."""
+    # Get version first
+    version = get_version()
+    
     # Get the project root directory
     server_dir = Path(__file__).parent
     project_root = server_dir.parent
     dist_dir = server_dir / "dist"
     
-    print("Building Unix Socket Bridge server distribution...")
+    print(f"Building Unix Socket Bridge server distribution v{version}...")
     
     # Clean existing dist directory
     if dist_dir.exists():
@@ -30,9 +72,15 @@ def main():
     print(f"Creating dist directory: {dist_dir}")
     dist_dir.mkdir()
     
-    # Create subdirectories
-    (dist_dir / "examples").mkdir()
-    (dist_dir / "systemd").mkdir()
+    # Create temporary build directory for staging
+    temp_build_dir = server_dir / "temp_build"
+    if temp_build_dir.exists():
+        shutil.rmtree(temp_build_dir)
+    temp_build_dir.mkdir()
+    
+    # Create subdirectories in temp build
+    (temp_build_dir / "examples").mkdir()
+    (temp_build_dir / "systemd").mkdir()
     
     # Copy core server files
     print("Copying core server files...")
@@ -45,7 +93,7 @@ def main():
     for file in core_files:
         src = server_dir / file
         if src.exists():
-            dst = dist_dir / file
+            dst = temp_build_dir / file
             shutil.copy2(src, dst)
             print(f"  Copied: {file}")
         else:
@@ -56,7 +104,7 @@ def main():
     examples_src = project_root / "examples"
     if examples_src.exists():
         for example_file in examples_src.glob("*.json"):
-            dst = dist_dir / "examples" / example_file.name
+            dst = temp_build_dir / "examples" / example_file.name
             shutil.copy2(example_file, dst)
             print(f"  Copied: examples/{example_file.name}")
     
@@ -66,7 +114,7 @@ def main():
     if systemd_src.exists():
         for service_file in systemd_src.glob("*"):
             if service_file.is_file():
-                dst = dist_dir / "systemd" / service_file.name
+                dst = temp_build_dir / "systemd" / service_file.name
                 shutil.copy2(service_file, dst)
                 print(f"  Copied: systemd/{service_file.name}")
     
@@ -76,13 +124,13 @@ def main():
     for doc_file in doc_files:
         src = project_root / doc_file
         if src.exists():
-            dst = dist_dir / doc_file
+            dst = temp_build_dir / doc_file
             shutil.copy2(src, dst)
             print(f"  Copied: {doc_file}")
     
     # Create installation script
     print("Creating installation script...")
-    install_script = dist_dir / "install.sh"
+    install_script = temp_build_dir / "install.sh"
     install_content = """#!/bin/bash
 set -e
 
@@ -128,7 +176,7 @@ echo "For more information, see README.md"
     
     # Create uninstall script
     print("Creating uninstall script...")
-    uninstall_script = dist_dir / "uninstall.sh"
+    uninstall_script = temp_build_dir / "uninstall.sh"
     uninstall_content = """#!/bin/bash
 set -e
 
@@ -180,7 +228,7 @@ echo "Uninstallation complete!"
     
     # Create simple deployment README
     print("Creating deployment README...")
-    deploy_readme = dist_dir / "DEPLOY.md"
+    deploy_readme = temp_build_dir / "DEPLOY.md"
     deploy_content = """# Unix Socket Bridge Server Deployment
 
 This distribution contains everything needed to deploy the Unix Socket Bridge server.
@@ -261,20 +309,58 @@ See the main README.md for detailed configuration and troubleshooting informatio
         f.write(deploy_content)
     print(f"  Created: DEPLOY.md")
     
+    # Create version information file in dist directory
+    print("Creating version information...")
+    version_info = create_version_info(version, dist_dir)
+    
+    # Create versioned archive from temp build directory
+    print(f"\n{'='*60}")
+    print("Creating archive from build files...")
+    archive_name = f"unix-socket-bridge-server-v{version}.tar.gz"
+    archive_path = dist_dir / archive_name
+    
+    print(f"Creating archive: {archive_path}")
+    with tarfile.open(archive_path, "w:gz") as tar:
+        for item in temp_build_dir.rglob("*"):
+            if item.is_file():
+                # Use relative path within the archive
+                arcname = f"unix-socket-bridge-server-v{version}/{item.relative_to(temp_build_dir)}"
+                tar.add(item, arcname=arcname)
+    
+    # Create latest symlink
+    latest_link = dist_dir / "unix-socket-bridge-server-latest.tar.gz"
+    if latest_link.is_symlink() or latest_link.exists():
+        latest_link.unlink()
+    latest_link.symlink_to(archive_name)
+    
+    # Clean up temp build directory
+    print("Cleaning up temporary build files...")
+    shutil.rmtree(temp_build_dir)
+    
     # Print summary
-    print("\n" + "="*60)
+    print(f"\n{'='*60}")
     print("Distribution build complete!")
     print(f"Location: {dist_dir}")
-    print("\nContents:")
+    print(f"Version: {version}")
+    print("\nFinal contents:")
     for item in sorted(dist_dir.rglob("*")):
         if item.is_file():
             rel_path = item.relative_to(dist_dir)
             print(f"  {rel_path}")
     
-    print(f"\nTotal files: {len(list(dist_dir.rglob('*')))}")
-    print("\nTo create a tarball:")
-    print(f"  cd {server_dir}")
-    print("  tar -czf unix-socket-bridge-server.tar.gz dist/")
+    # Print archive information
+    archive_size = archive_path.stat().st_size
+    size_mb = archive_size / (1024 * 1024)
+    print(f"\nArchive size: {size_mb:.2f} MB")
+    
+    print(f"\n{'='*60}")
+    print("Release information:")
+    print(f"  Version: {version}")
+    print(f"  Build date: {version_info['build_date']}")
+    print(f"  Archive: {archive_path.name}")
+    print(f"  Component: {version_info['component']}")
+    
+    return archive_path
 
 
 if __name__ == "__main__":
