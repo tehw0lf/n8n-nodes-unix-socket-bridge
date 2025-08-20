@@ -8,6 +8,17 @@ import os
 from pathlib import Path
 from typing import Dict, Any
 
+@pytest.fixture(autouse=True)
+def disable_auth_by_default():
+    """Disable authentication by default for tests"""
+    original_auth = os.environ.get('AUTH_ENABLED')
+    os.environ['AUTH_ENABLED'] = 'false'
+    yield
+    if original_auth is not None:
+        os.environ['AUTH_ENABLED'] = original_auth
+    else:
+        os.environ.pop('AUTH_ENABLED', None)
+
 @pytest.fixture
 def temp_socket_path():
     """Create a temporary socket path for testing"""

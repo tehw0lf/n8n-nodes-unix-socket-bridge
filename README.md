@@ -8,7 +8,12 @@ A powerful n8n community node that enables communication with Unix domain socket
 - **Easy Integration**: Simple dropdown selection of available commands in n8n
 - **Parameter Validation**: Built-in validation ensures correct command execution
 - **Flexible Configuration**: Works with any system command via JSON configuration
-- **Production Ready**: Includes systemd service examples and security controls
+- **🔐 Authentication Support**: Secure token-based authentication with hashed tokens
+- **⚡ Rate Limiting**: Built-in rate limiting to prevent abuse and control resource usage
+- **📏 Size Limits**: Configurable request/response size limits for memory safety
+- **🛡️ Security Controls**: Command allowlisting, input validation, and sandboxed execution
+- **🧵 Threading Support**: Optional multi-threading for concurrent request handling
+- **Production Ready**: Includes systemd service examples and comprehensive security features
 
 ## ⚠️ Important Docker Limitation
 
@@ -89,6 +94,74 @@ unix-socket-client /tmp/playerctl.sock ping
 
 # See available commands
 unix-socket-client /tmp/playerctl.sock introspect
+```
+
+## 🔐 Security Configuration
+
+### Authentication
+
+The Unix Socket Bridge supports secure token-based authentication to protect your services:
+
+#### Enable Authentication
+```bash
+# Using hashed tokens (recommended for production)
+export AUTH_ENABLED=true
+export AUTH_TOKEN_HASH=e06b5a4f194b95775ffd36453d8abaea0226a1d8b127ad9ce96357d9eda64b51
+python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/playerctl.json
+
+# Using plaintext tokens (development only)
+export AUTH_ENABLED=true
+export AUTH_TOKEN=your-secret-token
+python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/playerctl.json
+```
+
+#### Generate Secure Token Hash
+```bash
+# Generate a secure hash for your token
+echo -n "your-secret-token" | sha256sum
+```
+
+#### Configure n8n Node
+In your n8n workflow, add the authentication token to the Unix Socket Bridge node:
+- Set **Auth Token** field to your plaintext token
+- The node will authenticate with the server automatically
+
+### Rate Limiting
+
+Control request frequency to prevent abuse:
+
+```bash
+# Configure rate limiting (30 requests per 60 seconds by default)
+export AUTH_MAX_ATTEMPTS=5        # Max failed auth attempts
+export AUTH_WINDOW_SECONDS=60     # Time window for rate limiting
+export AUTH_BLOCK_DURATION=60     # Block duration after max attempts
+```
+
+### Advanced Security Options
+
+Add to your server configuration file:
+
+```json
+{
+  "name": "Secure Service",
+  "socket_path": "/tmp/secure.sock",
+  "socket_permissions": 600,
+  "max_request_size": 1048576,
+  "max_output_size": 100000,
+  "enable_rate_limit": true,
+  "rate_limit": {
+    "requests": 30,
+    "window": 60
+  },
+  "allowed_executable_dirs": ["/usr/bin/", "/usr/local/bin/"],
+  "commands": {
+    "safe-command": {
+      "description": "A secure command",
+      "executable": ["echo", "hello"],
+      "timeout": 10
+    }
+  }
+}
 ```
 
 ## 🎯 Example Use Cases
@@ -206,6 +279,10 @@ Type=simple
 ExecStart=/usr/bin/python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/playerctl.json
 Restart=always
 User=www-data
+Environment=AUTH_ENABLED=true
+Environment=AUTH_TOKEN_HASH=your-hashed-token-here
+Environment=AUTH_MAX_ATTEMPTS=5
+Environment=AUTH_WINDOW_SECONDS=60
 
 [Install]
 WantedBy=multi-user.target
@@ -241,10 +318,16 @@ sudo systemctl start socket-bridge-playerctl
 
 ## 🔒 Security Notes
 
-- **Command Allowlisting**: Only commands defined in your configuration can be executed
-- **Input Validation**: All parameters are validated against your configuration
-- **Sandboxed Execution**: Commands run with restricted environment variables
-- **User Separation**: Consider running socket servers with limited user privileges
+- **🔐 Authentication**: Use hashed tokens for production environments to secure access
+- **⚡ Rate Limiting**: Built-in protection against abuse with configurable limits
+- **📏 Size Limits**: Request and response size limits prevent memory exhaustion attacks
+- **✅ Command Allowlisting**: Only commands defined in your configuration can be executed
+- **🔍 Input Validation**: All parameters validated against patterns and types
+- **🗂️ Path Restrictions**: Executables must be in predefined allowed directories
+- **⏱️ Timeout Protection**: Commands have configurable timeouts to prevent hanging
+- **🔒 File Permissions**: Socket files created with restrictive permissions (600 by default)
+- **👤 User Separation**: Run socket servers with limited user privileges (www-data recommended)
+- **🏖️ Sandboxed Execution**: Commands run with restricted environment variables
 
 ## 📝 License
 

@@ -35,6 +35,10 @@ The node will appear in your node list as "Unix Socket Bridge"!
 - **Easy Configuration**: Simple dropdown selection of available operations
 - **Parameter Validation**: Built-in validation ensures correct command execution
 - **Flexible Response Handling**: Auto-detect JSON responses or handle as plain text
+- **🔐 Authentication Support**: Secure token-based authentication for protected services
+- **⚡ Rate Limiting Protection**: Built-in rate limiting prevents abuse and overload
+- **📏 Size Controls**: Configurable response size limits for memory safety
+- **🛡️ Security Features**: Input validation, command allowlisting, and timeout protection
 - **Production Ready**: Works with systemd services and Docker deployments
 
 ## Quick Start
@@ -84,6 +88,17 @@ Path to the Unix domain socket file (e.g., `/tmp/socket.sock`)
 
 ### Auto-Discover Commands (Recommended)
 When enabled, automatically loads available commands from the server and provides a dropdown for easy selection.
+
+### Authentication
+For servers with authentication enabled:
+- **Auth Token**: Enter your authentication token
+- The node automatically handles authentication with the server
+- Leave empty for servers without authentication
+
+### Advanced Options
+- **Max Response Size**: Limit response size for memory safety (default: 1MB)
+- **Include Metadata**: Include execution metadata in responses
+- **Timeout**: Connection timeout in milliseconds (default: 5000ms)
 
 ### Operation Modes
 
@@ -199,7 +214,7 @@ Get the server from the [main repository](https://github.com/tehw0lf/n8n-nodes-u
 
 ## Production Setup
 
-For production use, run the socket server as a systemd service:
+For production use, run the socket server as a systemd service with authentication:
 
 ```ini
 [Unit]
@@ -211,10 +226,23 @@ Type=simple
 ExecStart=/usr/bin/python3 /usr/local/bin/socket-server.py /etc/socket-bridge/config.json
 Restart=always
 User=www-data
+Environment=AUTH_ENABLED=true
+Environment=AUTH_TOKEN_HASH=your-hashed-token-here
+Environment=AUTH_MAX_ATTEMPTS=5
+Environment=AUTH_WINDOW_SECONDS=60
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+### Security Configuration
+
+Generate a secure token hash:
+```bash
+echo -n "your-secret-token" | sha256sum
+```
+
+Use the hash in your systemd service and the plaintext token in your n8n node configuration.
 
 ## Troubleshooting
 
@@ -231,6 +259,12 @@ WantedBy=multi-user.target
 - Check socket file permissions
 - Ensure n8n can access the socket path
 - Verify the server configuration
+
+### Authentication failures?
+- Verify your auth token is correct
+- Check if the server has authentication enabled
+- Ensure token hash matches on the server side
+- Check server logs for authentication errors
 
 ## Compatibility
 

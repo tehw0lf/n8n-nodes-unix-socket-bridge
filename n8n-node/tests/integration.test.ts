@@ -171,10 +171,10 @@ describe("UnixSocketBridge Integration Tests", () => {
         socket.on("data", (data) => {
           const request = JSON.parse(data.toString());
 
-          if (request.command === "echo" && request.parameters) {
+          if (request.command === "echo") {
             const response = {
               ...echoResponse,
-              output: request.parameters.message,
+              output: request.parameters ? request.parameters.message : "Hello World!",
             };
             socket.write(JSON.stringify(response));
             socket.end();
@@ -192,6 +192,7 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce("json") // responseFormat
             .mockReturnValueOnce({}) // options
             .mockReturnValueOnce("echo") // command
+            .mockReturnValueOnce("") // authToken
             .mockReturnValueOnce({
               // parameters
               parameter: [
@@ -457,6 +458,7 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce("json") // responseFormat
             .mockReturnValueOnce({}) // options
             .mockReturnValueOnce("test") // command
+            .mockReturnValueOnce("") // authToken
             .mockReturnValueOnce({
               parameter: [
                 { name: "text", value: "hello", type: "string" },

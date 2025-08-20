@@ -70,7 +70,11 @@ export class PythonServerManager {
     // Spawn the Python server process
     this.serverProcess = spawn("python3", [serverScriptPath, this.configPath], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      env: { 
+        ...process.env, 
+        PYTHONUNBUFFERED: "1",
+        AUTH_ENABLED: "false" // Disable authentication for e2e tests
+      },
     });
 
     // Set up process event handlers

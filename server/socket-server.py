@@ -17,6 +17,82 @@ import re
 from collections import defaultdict
 from time import time
 import threading
+import secrets
+import hashlib
+
+class AuthRateLimiter:
+    """Rate limiter for authentication attempts"""
+    
+    def __init__(self, max_attempts: int = 5, window_seconds: int = 60, block_duration: int = 60):
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self.block_duration = block_duration
+        self.failed_attempts = defaultdict(list)  # client_id -> [timestamps]
+        self.blocked_clients = defaultdict(float)  # client_id -> block_until_timestamp
+        self.logger = logging.getLogger(__name__)
+        
+    def check_rate_limit(self, client_id: str) -> bool:
+        """Check if client is allowed to attempt authentication"""
+        now = time()
+        
+        # Check if client is currently blocked
+        if client_id in self.blocked_clients:
+            if now < self.blocked_clients[client_id]:
+                return False  # Still blocked
+            else:
+                # Block expired, remove from blocked list
+                del self.blocked_clients[client_id]
+                if client_id in self.failed_attempts:
+                    del self.failed_attempts[client_id]
+        
+        # Cleanup old entries and check current attempt count
+        self.cleanup_old_entries()
+        
+        return len(self.failed_attempts[client_id]) < self.max_attempts
+    
+    def record_failure(self, client_id: str):
+        """Record a failed authentication attempt"""
+        now = time()
+        self.failed_attempts[client_id].append(now)
+        
+        attempt_count = len(self.failed_attempts[client_id])
+        self.logger.warning(f"Failed authentication attempt from {client_id} ({attempt_count}/{self.max_attempts})")
+        
+        # Block client if max attempts reached
+        if attempt_count >= self.max_attempts:
+            self.blocked_clients[client_id] = now + self.block_duration
+            self.logger.error(f"Client {client_id} blocked due to too many failed auth attempts")
+    
+    def record_success(self, client_id: str):
+        """Clear failure counter on successful authentication"""
+        if client_id in self.failed_attempts:
+            del self.failed_attempts[client_id]
+        # Note: Don't clear blocked_clients here - let blocks expire naturally
+        self.logger.info(f"Successful authentication from {client_id}")
+    
+    def cleanup_old_entries(self):
+        """Remove old entries to prevent memory growth"""
+        now = time()
+        
+        # Clean up failed attempts outside the window
+        for client_id in list(self.failed_attempts.keys()):
+            self.failed_attempts[client_id] = [
+                t for t in self.failed_attempts[client_id]
+                if now - t < self.window_seconds
+            ]
+            if not self.failed_attempts[client_id]:
+                del self.failed_attempts[client_id]
+        
+        # Clean up expired blocks
+        expired_blocks = []
+        for client_id, block_until in self.blocked_clients.items():
+            if now >= block_until:
+                expired_blocks.append(client_id)
+        
+        for client_id in expired_blocks:
+            del self.blocked_clients[client_id]
+            if expired_blocks:
+                self.logger.debug(f"Cleaned up {len(expired_blocks)} expired rate limit entries")
 
 class ConfigurableSocketServer:
     def __init__(self, config_path: str):
@@ -33,6 +109,35 @@ class ConfigurableSocketServer:
         self.max_request_size = self.config.get('max_request_size', 1048576)  # 1MB default
         self.max_output_size = self.config.get('max_output_size', 100000)  # 100KB default
         
+        # Authentication setup
+        self.auth_enabled = self._load_auth_config()
+        self.auth_token = None
+        self.auth_token_hash = None
+        self.auth_use_hash = False
+        
+        if self.auth_enabled:
+            # Try to load hashed token first (more secure)
+            auth_token_hash = os.getenv('AUTH_TOKEN_HASH')
+            if not auth_token_hash and 'auth_token_hash' in self.config:
+                auth_token_hash = self.config['auth_token_hash']
+            
+            if auth_token_hash:
+                self.auth_token_hash = auth_token_hash
+                self.auth_use_hash = True
+            else:
+                # Fallback to plaintext token (less secure, for backward compatibility)
+                self.auth_token = self._load_auth_token()
+                if not self.auth_token:
+                    logging.error("Authentication enabled but no token configured")
+                    logging.error("Set AUTH_TOKEN (plaintext) or AUTH_TOKEN_HASH (secure) environment variable")
+                    sys.exit(1)
+        
+        # Authentication rate limiting
+        auth_max_attempts = int(os.getenv('AUTH_MAX_ATTEMPTS', '5'))
+        auth_window_seconds = int(os.getenv('AUTH_WINDOW_SECONDS', '60'))
+        auth_block_duration = int(os.getenv('AUTH_BLOCK_DURATION', '60'))
+        self.auth_rate_limiter = AuthRateLimiter(auth_max_attempts, auth_window_seconds, auth_block_duration)
+        
         # Setup logging
         log_level = self.config.get('log_level', 'INFO')
         logging.basicConfig(
@@ -40,6 +145,84 @@ class ConfigurableSocketServer:
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
         self.logger = logging.getLogger(__name__)
+        
+        if self.auth_enabled:
+            if self.auth_use_hash:
+                self.logger.info("Auth enabled, using hashed token authentication (secure mode)")
+            else:
+                self.logger.info("Auth enabled, using plaintext token authentication")
+                self.logger.warning("Consider using AUTH_TOKEN_HASH for better security")
+        else:
+            self.logger.info("Auth disabled, running in development mode")
+    
+    def _load_auth_config(self) -> bool:
+        """Load authentication configuration from environment variables"""
+        # Check environment variable first (production default is enabled)
+        auth_enabled_env = os.getenv('AUTH_ENABLED', 'true').lower()
+        return auth_enabled_env in ('true', '1', 'yes', 'on')
+    
+    def _load_auth_token(self) -> str:
+        """Load authentication token from environment variables or config file"""
+        # Try environment variable first
+        token = os.getenv('AUTH_TOKEN')
+        if token:
+            return token
+        
+        # Try config file
+        if 'auth_token' in self.config:
+            return self.config['auth_token']
+        
+        return None
+    
+    @staticmethod
+    def hash_token(token: str) -> str:
+        """Generate SHA-256 hash of a token for secure storage"""
+        return hashlib.sha256(token.encode('utf-8')).hexdigest()
+    
+    @staticmethod
+    def verify_token_hash(token: str, token_hash: str) -> bool:
+        """Verify a token against its stored hash"""
+        return hashlib.sha256(token.encode('utf-8')).hexdigest() == token_hash
+    
+    def validate_auth(self, request: Dict[str, Any], client_id: str) -> tuple[bool, str]:
+        """Validate authentication token from request"""
+        # If auth is disabled, always allow
+        if not self.auth_enabled:
+            return True, ""
+        
+        # Check if client is currently blocked
+        if not self.auth_rate_limiter.check_rate_limit(client_id):
+            return False, "rate_limited"
+        
+        # Extract token from request
+        auth_token = request.get('auth_token')
+        
+        # Check if token is present and valid
+        token_valid = False
+        if auth_token:
+            if self.auth_use_hash:
+                # Verify against stored hash (secure mode)
+                token_valid = self.verify_token_hash(auth_token, self.auth_token_hash)
+            else:
+                # Compare plaintext (backward compatibility mode)
+                token_valid = auth_token == self.auth_token
+        
+        if not token_valid:
+            self.auth_rate_limiter.record_failure(client_id)
+            # Check if the client should be blocked after this failure
+            if not self.auth_rate_limiter.check_rate_limit(client_id):
+                return False, "rate_limited"
+            else:
+                return False, "auth_failed"
+        
+        # Even with correct token, check if client is currently blocked
+        # This is important for consistent rate limiting behavior
+        if not self.auth_rate_limiter.check_rate_limit(client_id):
+            return False, "rate_limited"
+        
+        # Successful authentication - only record if not blocked
+        self.auth_rate_limiter.record_success(client_id)
+        return True, ""
         
     def load_config(self, config_path: str) -> Dict[str, Any]:
         """Load and validate configuration file"""
@@ -331,7 +514,17 @@ class ConfigurableSocketServer:
         
     def handle_client(self, client_socket: socket.socket, client_addr: str):
         """Handle a client connection"""
+        # For rate limiting, try to get client process info on Linux
         client_id = f"client_{id(client_socket)}"
+        try:
+            # Try to get peer credentials (Linux-specific)
+            import struct
+            creds = client_socket.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i'))
+            pid, uid, gid = struct.unpack('3i', creds)
+            auth_client_id = f"process_{pid}"
+        except (OSError, AttributeError, ImportError):
+            # Fallback to socket ID if peer credentials not available
+            auth_client_id = client_id
         
         try:
             # Rate limiting
@@ -350,12 +543,34 @@ class ConfigurableSocketServer:
             request = json.loads(data)
             self.logger.debug(f"Received request from {client_id}: {request}")
             
+            # Authentication validation
+            auth_valid, auth_error = self.validate_auth(request, auth_client_id)
+            if not auth_valid:
+                if auth_error == "rate_limited":
+                    error_response = {
+                        'success': False,
+                        'error': 'Too many failed authentication attempts. Please try again later.',
+                        'request_id': request.get('request_id')
+                    }
+                else:  # auth_failed
+                    error_response = {
+                        'success': False,
+                        'error': 'Authentication failed',
+                        'request_id': request.get('request_id')
+                    }
+                client_socket.send(json.dumps(error_response).encode())
+                return
+            
             # Validate request
             valid, error_msg = self.validate_request(request)
             if not valid:
                 response = {'success': False, 'error': error_msg}
             else:
                 response = self.execute_command(request)
+                
+            # Add request_id to response if provided
+            if 'request_id' in request:
+                response['request_id'] = request['request_id']
                 
             # Send response
             response_json = json.dumps(response)
@@ -405,6 +620,9 @@ class ConfigurableSocketServer:
             
             if self.config.get('enable_rate_limit', True):
                 self.logger.info(f"Rate limit: {self.rate_limit['requests']} requests per {self.rate_limit['window']} seconds")
+            
+            if self.auth_enabled:
+                self.logger.info(f"Authentication rate limit: {self.auth_rate_limiter.max_attempts} attempts per {self.auth_rate_limiter.window_seconds} seconds")
             
             while self.running:
                 try:
@@ -463,11 +681,58 @@ class ConfigurableSocketServer:
 
 def main():
     parser = argparse.ArgumentParser(description='Generic Unix Socket Server')
-    parser.add_argument('config', help='Path to configuration file')
+    parser.add_argument('config', nargs='?', help='Path to configuration file')
     parser.add_argument('--validate', action='store_true', help='Validate config and exit')
     parser.add_argument('--example', action='store_true', help='Show example configuration')
+    parser.add_argument('--generate-token', action='store_true', help='Generate a secure authentication token')
+    parser.add_argument('--hash-token', type=str, metavar='TOKEN', help='Generate hash for an existing token')
     
     args = parser.parse_args()
+    
+    # Generate secure token
+    if args.generate_token:
+        token = secrets.token_urlsafe(32)
+        token_hash = ConfigurableSocketServer.hash_token(token)
+        
+        print(f"Generated secure authentication token:")
+        print(f"")
+        print(f"🔑 PLAINTEXT TOKEN (store securely, give to clients):")
+        print(f"   {token}")
+        print(f"")
+        print(f"🔒 HASHED TOKEN (store on server, more secure):")
+        print(f"   {token_hash}")
+        print(f"")
+        print(f"📋 Environment variable options:")
+        print(f"")
+        print(f"   Option 1 - Secure (recommended):")
+        print(f"   export AUTH_TOKEN_HASH={token_hash}")
+        print(f"")
+        print(f"   Option 2 - Simple (less secure):")
+        print(f"   export AUTH_TOKEN={token}")
+        print(f"")
+        print(f"⚠️  SECURITY NOTE:")
+        print(f"   - Give the PLAINTEXT token to n8n clients")
+        print(f"   - Store the HASHED token on the server for better security")
+        print(f"   - Never store plaintext tokens in config files or logs")
+        return
+    
+    # Hash existing token
+    if args.hash_token:
+        token_hash = ConfigurableSocketServer.hash_token(args.hash_token)
+        print(f"Token hash generated:")
+        print(f"")
+        print(f"🔑 PLAINTEXT TOKEN:")
+        print(f"   {args.hash_token}")
+        print(f"")
+        print(f"🔒 HASHED TOKEN (for server storage):")
+        print(f"   {token_hash}")
+        print(f"")
+        print(f"📋 Use this environment variable:")
+        print(f"   export AUTH_TOKEN_HASH={token_hash}")
+        return
+    
+    if not args.config and not args.example and not args.hash_token:
+        parser.error("Config file is required unless using --generate-token or --example")
     
     # Show example configuration
     if args.example:
@@ -525,6 +790,14 @@ def main():
         print(f"Commands: {list(server.config['commands'].keys())}")
         print(f"Rate limiting: {'Enabled' if server.config.get('enable_rate_limit', True) else 'Disabled'}")
         print(f"Threading: {'Enabled' if server.config.get('enable_threading', False) else 'Disabled'}")
+        print(f"Authentication: {'Enabled' if server.auth_enabled else 'Disabled'}")
+        if server.auth_enabled:
+            if server.auth_use_hash:
+                print(f"Auth mode: Hashed token (secure)")
+                print(f"Auth token hash loaded: {'Yes' if server.auth_token_hash else 'No'}")
+            else:
+                print(f"Auth mode: Plaintext token (consider using hashed)")
+                print(f"Auth token loaded: {'Yes' if server.auth_token else 'No'}")
         return
         
     # Setup signal handlers

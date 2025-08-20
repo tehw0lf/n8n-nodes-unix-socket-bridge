@@ -16,6 +16,8 @@ import * as net from "net";
 interface SocketCommand {
   command: string;
   parameters?: Record<string, any>;
+  auth_token?: string;
+  request_id?: string;
 }
 
 interface ServerInfo {
@@ -46,6 +48,7 @@ interface CommandResponse {
   output?: string;
   parsed_output?: any;
   timestamp?: number;
+  request_id?: string;
 }
 
 /**
@@ -96,6 +99,18 @@ export class UnixSocketBridge implements INodeType {
         required: true,
       },
       {
+        displayName: "Authentication Token",
+        name: "authToken",
+        type: "string",
+        typeOptions: {
+          password: true,
+        },
+        default: "",
+        placeholder: "Optional authentication token",
+        description: "Authentication token for the server (leave empty if authentication is disabled)",
+        required: false,
+      },
+      {
         displayName: "Auto-Discover Commands",
         name: "autoDiscover",
         type: "boolean",
@@ -109,7 +124,7 @@ export class UnixSocketBridge implements INodeType {
         type: "options",
         typeOptions: {
           loadOptionsMethod: "getAvailableCommands",
-          loadOptionsDependsOn: ["socketPath"], // Force reload when socket path changes
+          loadOptionsDependsOn: ["socketPath", "authToken"], // Force reload when socket path or auth token changes
         },
         displayOptions: {
           show: {
@@ -309,6 +324,7 @@ export class UnixSocketBridge implements INodeType {
         this: ILoadOptionsFunctions
       ): Promise<INodePropertyOptions[]> {
         const socketPath = this.getNodeParameter("socketPath") as string;
+        const authToken = this.getNodeParameter("authToken", "") as string;
         const timeout = 5000;
 
         // Provide immediate feedback
@@ -319,7 +335,13 @@ export class UnixSocketBridge implements INodeType {
         try {
           const introspectionRequest: SocketCommand = {
             command: "__introspect__",
+            request_id: `discovery-${Date.now()}`
           };
+          
+          // Add auth token if provided
+          if (authToken && typeof authToken === "string" && authToken.trim() !== "") {
+            introspectionRequest.auth_token = authToken.trim();
+          }
 
           const response = await sendToUnixSocket(
             socketPath,
@@ -488,8 +510,19 @@ export class UnixSocketBridge implements INodeType {
           }
         }
 
+        // Get authentication token
+        const authToken = this.getNodeParameter("authToken", i, "") as string;
+        
         // Build the request
-        const jsonMessage: SocketCommand = { command };
+        const jsonMessage: SocketCommand = { 
+          command,
+          request_id: `n8n-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        };
+        
+        // Add auth token if provided
+        if (authToken && typeof authToken === "string" && authToken.trim() !== "") {
+          jsonMessage.auth_token = authToken.trim();
+        }
 
         // Process parameters with type handling
         const parameters = this.getNodeParameter("parameters", i, {}) as any;
