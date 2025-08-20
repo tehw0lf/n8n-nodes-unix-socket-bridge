@@ -117,15 +117,13 @@ class TestAuthenticationModes:
                 server = ConfigurableSocketServer(config_path)
                 
                 assert server.auth_enabled is False
-                assert server.auth_token is None
                 assert server.auth_token_hash is None
-                assert server.auth_use_hash is False
                 
             finally:
                 os.unlink(config_path)
 
     def test_plaintext_token_mode(self):
-        """Test server initialization with plaintext token"""
+        """Test server initialization with plaintext token - should fail because only hashed tokens are supported"""
         config = self.create_test_config()
         test_token = "test-plaintext-token"
         
@@ -135,12 +133,9 @@ class TestAuthenticationModes:
                 config_path = f.name
             
             try:
-                server = ConfigurableSocketServer(config_path)
-                
-                assert server.auth_enabled is True
-                assert server.auth_token == test_token
-                assert server.auth_token_hash is None
-                assert server.auth_use_hash is False
+                # This should raise SystemExit because no hashed token is configured
+                with pytest.raises(SystemExit):
+                    ConfigurableSocketServer(config_path)
                 
             finally:
                 os.unlink(config_path)
@@ -160,9 +155,7 @@ class TestAuthenticationModes:
                 server = ConfigurableSocketServer(config_path)
                 
                 assert server.auth_enabled is True
-                assert server.auth_token is None
                 assert server.auth_token_hash == test_hash
-                assert server.auth_use_hash is True
                 
             finally:
                 os.unlink(config_path)
@@ -188,9 +181,7 @@ class TestAuthenticationModes:
                 server = ConfigurableSocketServer(config_path)
                 
                 assert server.auth_enabled is True
-                assert server.auth_token is None  # Should be None when hash is used
                 assert server.auth_token_hash == test_hash
-                assert server.auth_use_hash is True
                 
             finally:
                 os.unlink(config_path)
@@ -211,10 +202,8 @@ class TestAuthenticationValidation:
         }
         
         env_vars = {'AUTH_ENABLED': 'true'}
-        if auth_mode == 'hashed':
-            env_vars['AUTH_TOKEN_HASH'] = ConfigurableSocketServer.hash_token(token)
-        else:
-            env_vars['AUTH_TOKEN'] = token
+        # Only hashed tokens are supported now
+        env_vars['AUTH_TOKEN_HASH'] = ConfigurableSocketServer.hash_token(token)
             
         with patch.dict(os.environ, env_vars):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -257,37 +246,42 @@ class TestAuthenticationValidation:
                 os.unlink(config_path)
 
     def test_plaintext_auth_validation(self):
-        """Test plaintext token authentication validation"""
-        correct_token = "correct-plaintext-token"
-        server = self.create_server_with_auth('plaintext', correct_token)
+        """Test plaintext token authentication validation - should fail because only hashed tokens are supported"""
+        config = {
+            "name": "Test Server",
+            "socket_path": "/tmp/test-auth.sock",
+            "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
+            "commands": {
+                "ping": {"executable": ["echo", "pong"], "timeout": 5}
+            }
+        }
         
-        # Should succeed with correct token
-        valid, error = server.validate_auth({"auth_token": correct_token}, "test_client")
-        assert valid is True
-        assert error == ""
-        
-        # Should fail with wrong token
-        valid, error = server.validate_auth({"auth_token": "wrong-token"}, "test_client")
-        assert valid is False
-        assert error == "auth_failed"
-        
-        # Should fail with no token
-        valid, error = server.validate_auth({}, "test_client")
-        assert valid is False
-        assert error == "auth_failed"
+        # Try to create server with only AUTH_TOKEN (no AUTH_TOKEN_HASH) - should fail
+        with patch.dict(os.environ, {'AUTH_ENABLED': 'true', 'AUTH_TOKEN': 'plaintext-token'}):
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(config, f)
+                config_path = f.name
+            
+            try:
+                # This should raise SystemExit because no AUTH_TOKEN_HASH is provided
+                with pytest.raises(SystemExit):
+                    ConfigurableSocketServer(config_path)
+            finally:
+                os.unlink(config_path)
 
     def test_hashed_auth_validation(self):
         """Test hashed token authentication validation"""
         correct_token = "correct-hashed-token"
+        correct_token_hash = ConfigurableSocketServer.hash_token(correct_token)
         server = self.create_server_with_auth('hashed', correct_token)
         
-        # Should succeed with correct token (client sends plaintext, server has hash)
-        valid, error = server.validate_auth({"auth_token": correct_token}, "test_client")
+        # Should succeed with correct token hash (client sends hash, server has hash)
+        valid, error = server.validate_auth({"auth_token_hash": correct_token_hash}, "test_client")
         assert valid is True
         assert error == ""
         
-        # Should fail with wrong token
-        valid, error = server.validate_auth({"auth_token": "wrong-token"}, "test_client")
+        # Should fail with wrong token hash
+        valid, error = server.validate_auth({"auth_token_hash": "wrong-hash"}, "test_client")
         assert valid is False
         assert error == "auth_failed"
         

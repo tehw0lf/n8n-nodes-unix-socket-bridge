@@ -1,4 +1,4 @@
-name: server tests pipeline
+name: server tests and release pipeline
 
 on:
   push:
@@ -18,5 +18,9 @@ jobs:
       tool: "uv"
       install: "venv --python 3.12 && uv pip install -r requirements-test.txt"
       test: "run pytest"
+      build_branch: "run build-dist.py"
+      build_main: "run build-dist.py"
       event_name: ${{ github.event_name }}
       root_dir: "server"
+      artifact_path: "dist"
+      publish_github_release: "true"
