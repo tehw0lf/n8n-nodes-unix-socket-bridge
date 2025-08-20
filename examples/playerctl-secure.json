@@ -1,21 +1,27 @@
 {
-  "name": "PlayerCtl Media Control",
-  "description": "Control media players using playerctl",
+  "name": "PlayerCtl Media Control (Secure)",
+  "description": "Control media players using playerctl with secure authentication",
   "version": "1.0.0",
   "socket_path": "/tmp/playerctl.sock",
   "socket_permissions": 438,
   "log_level": "INFO",
+  
   "enable_rate_limit": true,
   "rate_limit": {
     "requests": 30,
     "window": 60
   },
+  
   "max_request_size": 1048576,
   "max_output_size": 100000,
   "enable_threading": false,
   "debug": false,
   "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
-  "auth_enabled": false,
+  
+  "auth_enabled": true,
+  "_security_note": "Set auth_enabled: true and provide auth_token_hash to enable secure authentication",
+  "_example_setup": "Use generate-token-hash.py to create secure tokens",
+  
   "commands": {
     "play": {
       "description": "Start playback",
@@ -77,6 +83,24 @@
         "bash",
         "-c",
         "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl status"
+      ],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "flag",
+          "pattern": "^[a-zA-Z0-9._-]+$"
+        }
+      }
+    },
+    "metadata": {
+      "description": "Get current track metadata",
+      "executable": [
+        "bash",
+        "-c",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl metadata --format '{{json}}-'"
       ],
       "timeout": 5,
       "parameters": {

@@ -8,10 +8,11 @@ A powerful n8n community node that enables communication with Unix domain socket
 - **Easy Integration**: Simple dropdown selection of available commands in n8n
 - **Parameter Validation**: Built-in validation ensures correct command execution
 - **Flexible Configuration**: Works with any system command via JSON configuration
-- **🔐 Authentication Support**: Secure token-based authentication with hashed tokens
+- **🔐 Secure Authentication**: SHA-256 hashed token authentication (never sends plain text)
 - **⚡ Rate Limiting**: Built-in rate limiting to prevent abuse and control resource usage
 - **📏 Size Limits**: Configurable request/response size limits for memory safety
 - **🛡️ Security Controls**: Command allowlisting, input validation, and sandboxed execution
+- **🔒 Environment Security**: Secure token storage via environment variables
 - **🧵 Threading Support**: Optional multi-threading for concurrent request handling
 - **Production Ready**: Includes systemd service examples and comprehensive security features
 
@@ -316,11 +317,24 @@ sudo systemctl start socket-bridge-playerctl
 - **macOS**: Full support for all features (tested and confirmed)
 - **Windows**: Not supported (Unix domain sockets not available)
 
+## 🔒 Security
+
+⚠️ **For comprehensive security guidance, see [SECURITY.md](SECURITY.md)**
+
+### Quick Security Setup
+
+1. **Generate secure token**: `python3 server/generate-token-hash.py --random`
+2. **Enable auth in config**: Add `"auth_enabled": true` to your config.json
+3. **Configure server**: `export AUTH_TOKEN_HASH="your-hash"`  
+4. **Configure n8n**: Use "HTTP Header Auth" credentials with plain text token
+5. **Security**: Plain text tokens are hashed before transmission (SHA-256)
+
 ## 🔒 Security Notes
 
-- **🔐 Authentication**: Use hashed tokens for production environments to secure access
+- **🔐 Secure Authentication**: SHA-256 hashed tokens only - no plain text transmission
 - **⚡ Rate Limiting**: Built-in protection against abuse with configurable limits
 - **📏 Size Limits**: Request and response size limits prevent memory exhaustion attacks
+- **🛡️ Security-First**: Plain text token support removed - credentials required
 - **✅ Command Allowlisting**: Only commands defined in your configuration can be executed
 - **🔍 Input Validation**: All parameters validated against patterns and types
 - **🗂️ Path Restrictions**: Executables must be in predefined allowed directories

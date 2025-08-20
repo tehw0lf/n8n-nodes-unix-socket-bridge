@@ -192,7 +192,6 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce("json") // responseFormat
             .mockReturnValueOnce({}) // options
             .mockReturnValueOnce("echo") // command
-            .mockReturnValueOnce("") // authToken
             .mockReturnValueOnce({
               // parameters
               parameter: [
@@ -458,7 +457,6 @@ describe("UnixSocketBridge Integration Tests", () => {
             .mockReturnValueOnce("json") // responseFormat
             .mockReturnValueOnce({}) // options
             .mockReturnValueOnce("test") // command
-            .mockReturnValueOnce("") // authToken
             .mockReturnValueOnce({
               parameter: [
                 { name: "text", value: "hello", type: "string" },

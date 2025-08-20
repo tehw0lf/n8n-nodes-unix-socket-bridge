@@ -25,21 +25,18 @@ describe("UnixSocketBridge Credential Picker", () => {
       expect(credentials?.[0].required).toBe(false);
     });
 
-    test("should maintain backward compatibility with deprecated token field", () => {
+    test("should only support secure credential authentication", () => {
       const properties = node.description.properties;
       const authTokenProperty = properties.find(prop => prop.name === "authToken");
       
-      expect(authTokenProperty).toBeDefined();
-      expect(authTokenProperty?.displayName).toBe("API Token (Deprecated)");
-      expect(authTokenProperty?.description).toContain("Deprecated");
-      expect(authTokenProperty?.description).toContain("credentials");
+      // Deprecated token field should be removed for security
+      expect(authTokenProperty).toBeUndefined();
     });
   });
 
-  describe("Token Resolution Logic", () => {
+  describe("Secure Token Resolution", () => {
     const createMockExecuteContext = (
-      credentialsValue?: string,
-      deprecatedTokenValue?: string
+      credentialsValue?: string
     ): Partial<IExecuteFunctions> => ({
       getCredentials: jest.fn().mockImplementation(async (type: string) => {
         if (type === "httpHeaderAuth" && credentialsValue !== undefined) {
@@ -47,76 +44,50 @@ describe("UnixSocketBridge Credential Picker", () => {
         }
         throw new Error("Credentials not found");
       }),
-      getNodeParameter: jest.fn().mockImplementation((name: string, index: number, defaultValue?: any) => {
-        if (name === "authToken") {
-          return deprecatedTokenValue ?? defaultValue ?? "";
-        }
-        return defaultValue;
-      }),
     });
 
-    test("should prioritize credentials over deprecated token field", async () => {
-      const mockContext = createMockExecuteContext("credential-token", "deprecated-token");
+    test("should use credentials for authentication", async () => {
+      const mockContext = createMockExecuteContext("secure-token");
       
       // This would be the actual logic from the execute method
       let authToken: string | undefined;
 
-      // 1. Try credentials first
       try {
         const credentials = await mockContext.getCredentials!('httpHeaderAuth');
         if (credentials && credentials.value) {
           authToken = credentials.value as string;
         }
       } catch (error) {
-        // Credentials not configured
+        // Credentials not configured - authentication will be skipped
       }
 
-      // 2. Fallback to deprecated field
-      if (!authToken) {
-        const deprecatedToken = mockContext.getNodeParameter!("authToken", 0, "") as string;
-        if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
-          authToken = deprecatedToken.trim();
-        }
-      }
-
-      expect(authToken).toBe("credential-token");
+      expect(authToken).toBe("secure-token");
       expect(mockContext.getCredentials).toHaveBeenCalledWith('httpHeaderAuth');
     });
 
-    test("should fallback to deprecated token when credentials not available", async () => {
-      const mockContext = createMockExecuteContext(undefined, "deprecated-token");
+    test("should handle missing credentials gracefully", async () => {
+      const mockContext = createMockExecuteContext(undefined);
       
       let authToken: string | undefined;
 
-      // 1. Try credentials first
       try {
         const credentials = await mockContext.getCredentials!('httpHeaderAuth');
         if (credentials && credentials.value) {
           authToken = credentials.value as string;
         }
       } catch (error) {
-        // Credentials not configured
+        // Credentials not configured - authentication will be skipped
       }
 
-      // 2. Fallback to deprecated field
-      if (!authToken) {
-        const deprecatedToken = mockContext.getNodeParameter!("authToken", 0, "") as string;
-        if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
-          authToken = deprecatedToken.trim();
-        }
-      }
-
-      expect(authToken).toBe("deprecated-token");
+      expect(authToken).toBeUndefined();
       expect(mockContext.getCredentials).toHaveBeenCalledWith('httpHeaderAuth');
-      expect(mockContext.getNodeParameter).toHaveBeenCalledWith("authToken", 0, "");
     });
 
-    test("should handle empty credentials gracefully", async () => {
-      const mockContext = createMockExecuteContext("", "fallback-token");
+    test("should handle empty credentials", async () => {
+      const mockContext = createMockExecuteContext("");
       
       let authToken: string | undefined;
 
-      // 1. Try credentials first
       try {
         const credentials = await mockContext.getCredentials!('httpHeaderAuth');
         if (credentials && credentials.value) {
@@ -124,40 +95,6 @@ describe("UnixSocketBridge Credential Picker", () => {
         }
       } catch (error) {
         // Credentials not configured
-      }
-
-      // 2. Fallback to deprecated field
-      if (!authToken) {
-        const deprecatedToken = mockContext.getNodeParameter!("authToken", 0, "") as string;
-        if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
-          authToken = deprecatedToken.trim();
-        }
-      }
-
-      expect(authToken).toBe("fallback-token");
-    });
-
-    test("should handle case when neither credentials nor deprecated token are provided", async () => {
-      const mockContext = createMockExecuteContext(undefined, "");
-      
-      let authToken: string | undefined;
-
-      // 1. Try credentials first
-      try {
-        const credentials = await mockContext.getCredentials!('httpHeaderAuth');
-        if (credentials && credentials.value) {
-          authToken = credentials.value as string;
-        }
-      } catch (error) {
-        // Credentials not configured
-      }
-
-      // 2. Fallback to deprecated field
-      if (!authToken) {
-        const deprecatedToken = mockContext.getNodeParameter!("authToken", 0, "") as string;
-        if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
-          authToken = deprecatedToken.trim();
-        }
       }
 
       expect(authToken).toBeUndefined();

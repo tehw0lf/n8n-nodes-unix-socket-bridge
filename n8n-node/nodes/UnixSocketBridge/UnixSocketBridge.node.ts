@@ -9,6 +9,7 @@ import {
   NodeOperationError,
 } from "n8n-workflow";
 import * as net from "net";
+import * as crypto from "crypto";
 
 /**
  * Interfaces for type safety
@@ -16,7 +17,7 @@ import * as net from "net";
 interface SocketCommand {
   command: string;
   parameters?: Record<string, any>;
-  auth_token?: string;
+  auth_token_hash?: string; // SHA-256 hash of authentication token (secure only)
   request_id?: string;
 }
 
@@ -52,11 +53,21 @@ interface CommandResponse {
 }
 
 /**
+ * Securely hash a token using SHA-256
+ * 
+ * @param token - The plain text token to hash
+ * @returns SHA-256 hash of the token in hexadecimal format
+ */
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
  * Unix Socket Bridge Node for n8n
  *
  * This node provides a generic interface for communicating with Unix domain socket servers.
  * It supports auto-discovery of available commands, parameter validation, and multiple
- * response formats.
+ * response formats. Security: All authentication tokens are hashed using SHA-256 before transmission.
  *
  * @example
  * // Basic usage with auto-discovery
@@ -105,18 +116,6 @@ export class UnixSocketBridge implements INodeType {
         required: true,
       },
       {
-        displayName: "API Token (Deprecated)",
-        name: "authToken",
-        type: "string",
-        typeOptions: {
-          password: true,
-        },
-        default: "",
-        placeholder: "Optional authentication token",
-        description: "⚠️ Deprecated: Please use credentials instead. Authentication token for the server (leave empty if authentication is disabled)",
-        required: false,
-      },
-      {
         displayName: "Auto-Discover Commands",
         name: "autoDiscover",
         type: "boolean",
@@ -130,7 +129,7 @@ export class UnixSocketBridge implements INodeType {
         type: "options",
         typeOptions: {
           loadOptionsMethod: "getAvailableCommands",
-          loadOptionsDependsOn: ["socketPath", "authToken"], // Force reload when socket path or auth token changes
+          loadOptionsDependsOn: ["socketPath"], // Force reload when socket path changes
         },
         displayOptions: {
           show: {
@@ -332,25 +331,16 @@ export class UnixSocketBridge implements INodeType {
         const socketPath = this.getNodeParameter("socketPath") as string;
         const timeout = 5000;
 
-        // Get authentication token with auto-detection (credentials first, then fallback to deprecated field)
+        // Get authentication token from credentials (secure approach only)
         let authToken: string | undefined;
 
-        // 1. Try credentials first
         try {
           const credentials = await this.getCredentials('httpHeaderAuth');
           if (credentials && credentials.value) {
             authToken = credentials.value as string;
           }
         } catch (error) {
-          // Credentials not configured - that's OK, we'll try the old field
-        }
-
-        // 2. Falls keine Credentials, nutze das alte Textfeld
-        if (!authToken) {
-          const deprecatedToken = this.getNodeParameter("authToken", "") as string;
-          if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
-            authToken = deprecatedToken.trim();
-          }
+          // Credentials not configured - authentication will be skipped
         }
 
         // Provide immediate feedback
@@ -364,9 +354,9 @@ export class UnixSocketBridge implements INodeType {
             request_id: `discovery-${Date.now()}`
           };
           
-          // Add auth token if provided
+          // Add auth token hash if provided (security: never send plain text tokens)
           if (authToken && authToken.trim() !== "") {
-            introspectionRequest.auth_token = authToken.trim();
+            introspectionRequest.auth_token_hash = hashToken(authToken.trim());
           }
 
           const response = await sendToUnixSocket(
@@ -536,25 +526,16 @@ export class UnixSocketBridge implements INodeType {
           }
         }
 
-        // Get authentication token with auto-detection (credentials first, then fallback to deprecated field)
+        // Get authentication token from credentials (secure approach only)
         let authToken: string | undefined;
 
-        // 1. Try credentials first
         try {
           const credentials = await this.getCredentials('httpHeaderAuth');
           if (credentials && credentials.value) {
             authToken = credentials.value as string;
           }
         } catch (error) {
-          // Credentials not configured - that's OK, we'll try the old field
-        }
-
-        // 2. Falls keine Credentials, nutze das alte Textfeld
-        if (!authToken) {
-          const deprecatedToken = this.getNodeParameter("authToken", i, "") as string;
-          if (deprecatedToken && typeof deprecatedToken === "string" && deprecatedToken.trim() !== "") {
-            authToken = deprecatedToken.trim();
-          }
+          // Credentials not configured - authentication will be skipped
         }
         
         // Build the request
@@ -563,9 +544,9 @@ export class UnixSocketBridge implements INodeType {
           request_id: `n8n-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         };
         
-        // Add auth token if provided
+        // Add auth token hash if provided (security: never send plain text tokens)
         if (authToken && authToken.trim() !== "") {
-          jsonMessage.auth_token = authToken.trim();
+          jsonMessage.auth_token_hash = hashToken(authToken.trim());
         }
 
         // Process parameters with type handling

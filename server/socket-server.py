@@ -111,26 +111,16 @@ class ConfigurableSocketServer:
         
         # Authentication setup
         self.auth_enabled = self._load_auth_config()
-        self.auth_token = None
         self.auth_token_hash = None
-        self.auth_use_hash = False
         
         if self.auth_enabled:
-            # Try to load hashed token first (more secure)
-            auth_token_hash = os.getenv('AUTH_TOKEN_HASH')
-            if not auth_token_hash and 'auth_token_hash' in self.config:
-                auth_token_hash = self.config['auth_token_hash']
-            
-            if auth_token_hash:
-                self.auth_token_hash = auth_token_hash
-                self.auth_use_hash = True
-            else:
-                # Fallback to plaintext token (less secure, for backward compatibility)
-                self.auth_token = self._load_auth_token()
-                if not self.auth_token:
-                    logging.error("Authentication enabled but no token configured")
-                    logging.error("Set AUTH_TOKEN (plaintext) or AUTH_TOKEN_HASH (secure) environment variable")
-                    sys.exit(1)
+            # Load hashed token from environment variable or config file
+            self.auth_token_hash = self._load_auth_token_hash()
+            if not self.auth_token_hash:
+                logging.error("Authentication enabled but no hashed token configured")
+                logging.error("Set AUTH_TOKEN_HASH environment variable or 'auth_token_hash' in config file")
+                logging.error("Use generate-token-hash.py to create secure hashed tokens")
+                sys.exit(1)
         
         # Authentication rate limiting
         auth_max_attempts = int(os.getenv('AUTH_MAX_ATTEMPTS', '5'))
@@ -147,30 +137,34 @@ class ConfigurableSocketServer:
         self.logger = logging.getLogger(__name__)
         
         if self.auth_enabled:
-            if self.auth_use_hash:
-                self.logger.info("Auth enabled, using hashed token authentication (secure mode)")
-            else:
-                self.logger.info("Auth enabled, using plaintext token authentication")
-                self.logger.warning("Consider using AUTH_TOKEN_HASH for better security")
+            self.logger.info("Auth enabled, using SHA-256 hashed token authentication")
         else:
             self.logger.info("Auth disabled, running in development mode")
     
     def _load_auth_config(self) -> bool:
-        """Load authentication configuration from environment variables"""
-        # Check environment variable first (production default is enabled)
-        auth_enabled_env = os.getenv('AUTH_ENABLED', 'true').lower()
-        return auth_enabled_env in ('true', '1', 'yes', 'on')
-    
-    def _load_auth_token(self) -> str:
-        """Load authentication token from environment variables or config file"""
-        # Try environment variable first
-        token = os.getenv('AUTH_TOKEN')
-        if token:
-            return token
+        """Load authentication configuration from config file or environment variables"""
+        # Check config file first (project-specific setting)
+        if 'auth_enabled' in self.config:
+            return bool(self.config['auth_enabled'])
         
-        # Try config file
-        if 'auth_token' in self.config:
-            return self.config['auth_token']
+        # Check environment variable as fallback (optional override)
+        auth_enabled_env = os.getenv('AUTH_ENABLED')
+        if auth_enabled_env is not None:
+            return auth_enabled_env.lower() in ('true', '1', 'yes', 'on')
+        
+        # Default to disabled (secure by explicit configuration)
+        return False
+    
+    def _load_auth_token_hash(self) -> str:
+        """Load authentication token hash from environment variables or config file"""
+        # Try environment variable first (recommended for production)
+        token_hash = os.getenv('AUTH_TOKEN_HASH')
+        if token_hash:
+            return token_hash
+        
+        # Try config file (alternative method)
+        if 'auth_token_hash' in self.config:
+            return self.config['auth_token_hash']
         
         return None
     
@@ -194,18 +188,14 @@ class ConfigurableSocketServer:
         if not self.auth_rate_limiter.check_rate_limit(client_id):
             return False, "rate_limited"
         
-        # Extract token from request
-        auth_token = request.get('auth_token')
+        # Extract hashed token from request (secure approach only)
+        auth_token_hash = request.get('auth_token_hash')
         
-        # Check if token is present and valid
+        # Check if hashed token is present and valid
         token_valid = False
-        if auth_token:
-            if self.auth_use_hash:
-                # Verify against stored hash (secure mode)
-                token_valid = self.verify_token_hash(auth_token, self.auth_token_hash)
-            else:
-                # Compare plaintext (backward compatibility mode)
-                token_valid = auth_token == self.auth_token
+        if auth_token_hash:
+            # Client sent hashed token - compare directly with stored hash
+            token_valid = auth_token_hash == self.auth_token_hash
         
         if not token_valid:
             self.auth_rate_limiter.record_failure(client_id)
@@ -792,12 +782,8 @@ def main():
         print(f"Threading: {'Enabled' if server.config.get('enable_threading', False) else 'Disabled'}")
         print(f"Authentication: {'Enabled' if server.auth_enabled else 'Disabled'}")
         if server.auth_enabled:
-            if server.auth_use_hash:
-                print(f"Auth mode: Hashed token (secure)")
-                print(f"Auth token hash loaded: {'Yes' if server.auth_token_hash else 'No'}")
-            else:
-                print(f"Auth mode: Plaintext token (consider using hashed)")
-                print(f"Auth token loaded: {'Yes' if server.auth_token else 'No'}")
+            print(f"Auth mode: SHA-256 hashed token (secure)")
+            print(f"Auth token hash loaded: {'Yes' if server.auth_token_hash else 'No'}")
         return
         
     # Setup signal handlers

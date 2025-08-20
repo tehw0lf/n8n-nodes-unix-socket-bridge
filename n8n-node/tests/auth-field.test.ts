@@ -21,55 +21,50 @@ describe("UnixSocketBridge Authentication Field", () => {
       expect(credentials?.[0].required).toBe(false);
     });
 
-    test("should include auth token field in node properties", () => {
+    test("should not include deprecated auth token field", () => {
       const properties = node.description.properties;
       
       const authTokenProperty = properties.find(prop => prop.name === "authToken");
       
-      expect(authTokenProperty).toBeDefined();
-      expect(authTokenProperty?.displayName).toBe("API Token (Deprecated)");
-      expect(authTokenProperty?.type).toBe("string");
-      expect(authTokenProperty?.required).toBe(false);
-      expect(authTokenProperty?.default).toBe("");
-      expect(authTokenProperty?.typeOptions?.password).toBe(true);
+      expect(authTokenProperty).toBeUndefined();
     });
 
-    test("should have auth token in load options dependencies", () => {
+    test("should have socket path in load options dependencies", () => {
       const properties = node.description.properties;
       
       const commandProperty = properties.find(prop => prop.name === "discoveredCommand");
       
       expect(commandProperty).toBeDefined();
-      expect(commandProperty?.typeOptions?.loadOptionsDependsOn).toContain("authToken");
       expect(commandProperty?.typeOptions?.loadOptionsDependsOn).toContain("socketPath");
+      expect(commandProperty?.typeOptions?.loadOptionsDependsOn).not.toContain("authToken");
     });
 
     test("should have proper field ordering", () => {
       const properties = node.description.properties;
       
       const socketPathIndex = properties.findIndex(prop => prop.name === "socketPath");
-      const authTokenIndex = properties.findIndex(prop => prop.name === "authToken");
       const autoDiscoverIndex = properties.findIndex(prop => prop.name === "autoDiscover");
       
-      // Auth token should come after socket path but before auto discover
-      expect(socketPathIndex).toBeLessThan(authTokenIndex);
-      expect(authTokenIndex).toBeLessThan(autoDiscoverIndex);
+      // Socket path should come before auto discover
+      expect(socketPathIndex).toBeLessThan(autoDiscoverIndex);
+      expect(socketPathIndex).toBeGreaterThanOrEqual(0);
+      expect(autoDiscoverIndex).toBeGreaterThanOrEqual(0);
     });
   });
 
   describe("Request Protocol", () => {
-    test("should include auth_token in SocketCommand interface", () => {
+    test("should include auth_token_hash in SocketCommand interface", () => {
       // This is a TypeScript compile-time test
       // If the interface is correct, this will compile without errors
       
       const validRequest: any = {
         command: "test",
-        auth_token: "test-token",
+        auth_token_hash: "hashed-token",
         request_id: "test-id",
         parameters: {}
       };
       
-      expect(validRequest.auth_token).toBeDefined();
+      expect(validRequest.auth_token_hash).toBeDefined();
       expect(validRequest.request_id).toBeDefined();
     });
 
@@ -113,28 +108,35 @@ describe("UnixSocketBridge Authentication Field", () => {
   });
 
   describe("Security Considerations", () => {
-    test("should use password field type for auth token", () => {
-      const properties = node.description.properties;
-      const authTokenProperty = properties.find(prop => prop.name === "authToken");
+    test("should use secure credentials only", () => {
+      const credentials = node.description.credentials;
       
-      expect(authTokenProperty?.typeOptions?.password).toBe(true);
+      expect(credentials).toBeDefined();
+      expect(credentials?.[0].name).toBe("httpHeaderAuth");
+      expect(credentials?.[0].required).toBe(false);
     });
 
-    test("should make auth token optional", () => {
+    test("should not expose plain text token fields", () => {
       const properties = node.description.properties;
-      const authTokenProperty = properties.find(prop => prop.name === "authToken");
+      const tokenFields = properties.filter(prop => 
+        prop.name.toLowerCase().includes('token') || 
+        prop.name.toLowerCase().includes('auth')
+      );
       
-      expect(authTokenProperty?.required).toBe(false);
+      // Should have no direct token fields
+      expect(tokenFields).toHaveLength(0);
     });
 
-    test("should provide helpful description", () => {
-      const properties = node.description.properties;
-      const authTokenProperty = properties.find(prop => prop.name === "authToken");
+    test("should use only hashed authentication", () => {
+      // Test that the interface only supports hashed tokens
+      const validRequest: any = {
+        command: "test",
+        auth_token_hash: "secure-hash",
+        request_id: "test-id"
+      };
       
-      expect(authTokenProperty?.description).toContain("authentication");
-      expect(authTokenProperty?.description).toContain("disabled");
-      expect(authTokenProperty?.description).toContain("Deprecated");
-      expect(authTokenProperty?.description).toContain("credentials");
+      expect(validRequest.auth_token_hash).toBeDefined();
+      expect(validRequest.auth_token).toBeUndefined();
     });
   });
 });
