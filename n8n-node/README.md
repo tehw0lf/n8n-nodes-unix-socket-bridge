@@ -212,6 +212,34 @@ Run any custom script or command:
 }
 ```
 
+## Parameter Validation
+
+The server supports comprehensive parameter validation for security and correctness:
+
+### Parameter Types and Styles
+
+| Type | Description | Validation |
+|------|-------------|------------|
+| `string` | Text values | Regex pattern, length limits |
+| `number` | Numeric values | Min/max value validation |
+| `boolean` | True/false | Converted to command flags |
+| `json` | Complex objects | JSON string validation |
+
+| Style | Format | Example |
+|-------|--------|---------|
+| `argument` | Positional argument | `command value` |
+| `flag` | `--name value` | `command --verbose true` |
+| `single_flag` | `--name=value` | `command --player=spotify` |
+
+### Security Features
+
+- **Regex Validation**: String parameters enforce pattern matching
+- **Length Limits**: `max_length` prevents oversized inputs
+- **Type Safety**: Parameters validated before execution
+- **Required Fields**: Missing required parameters are rejected
+
+See the [main repository](https://github.com/tehw0lf/n8n-nodes-unix-socket-bridge) examples for complete parameter configuration.
+
 ## Server Component
 
 This node requires the Unix Socket Bridge server to be running. The server:

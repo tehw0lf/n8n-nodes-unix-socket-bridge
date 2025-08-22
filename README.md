@@ -264,6 +264,7 @@ All example configurations in the `examples/` directory have been updated with:
 {
   "name": "Your Service Name",
   "socket_path": "/tmp/socket-bridge/service.sock",
+  "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
   "auth_enabled": false,
   "commands": {
     "command-name": {
@@ -274,6 +275,86 @@ All example configurations in the `examples/` directory have been updated with:
   }
 }
 ```
+
+### Parameter Validation System
+
+Commands can include parameters with comprehensive validation to ensure security and correctness:
+
+```json
+{
+  "name": "Service With Parameters",
+  "socket_path": "/tmp/socket-bridge/service.sock",
+  "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
+  "commands": {
+    "example-command": {
+      "description": "Command demonstrating parameter validation",
+      "executable": ["echo"],
+      "timeout": 10,
+      "parameters": {
+        "message": {
+          "description": "Message to display",
+          "type": "string",
+          "required": true,
+          "style": "argument",
+          "pattern": "^[a-zA-Z0-9._\\-\\s!?,]+$",
+          "max_length": 100
+        },
+        "verbose": {
+          "description": "Enable verbose output",
+          "type": "boolean", 
+          "required": false,
+          "style": "flag"
+        },
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
+        }
+      }
+    }
+  }
+}
+```
+
+#### Parameter Properties
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `description` | string | Yes | Human-readable description of the parameter |
+| `type` | string | Yes | Parameter type: `string`, `number`, `boolean`, `json`, `auto` |
+| `required` | boolean | Yes | Whether the parameter is required |
+| `style` | string | Yes | How the parameter is passed to the command |
+| `pattern` | string | No | Regex pattern for validation (string types only) |
+| `max_length` | number | No | Maximum length validation |
+| `min_value` | number | No | Minimum value (number types only) |
+| `max_value` | number | No | Maximum value (number types only) |
+
+#### Parameter Styles
+
+| Style | Description | Example Output |
+|-------|-------------|----------------|
+| `argument` | Passed as a positional argument | `command value` |
+| `flag` | Passed as `--name value` | `command --verbose true` |
+| `single_flag` | Passed as `--name=value` | `command --player=spotify` |
+
+#### Parameter Types
+
+- **`string`**: Text values with optional regex pattern validation
+- **`number`**: Numeric values with optional min/max validation  
+- **`boolean`**: True/false values (converted to strings for commands)
+- **`json`**: Complex objects passed as JSON strings
+- **`auto`**: Automatic type detection based on input
+
+#### Security Features
+
+- **Regex Validation**: All string parameters can enforce regex patterns
+- **Length Limits**: Prevent oversized inputs with `max_length`
+- **Type Safety**: Parameters are validated and converted to correct types
+- **Required Validation**: Missing required parameters are rejected
+- **Pattern Enforcement**: Invalid patterns are blocked before execution
 
 ## 🔐 Running as a System Service
 
