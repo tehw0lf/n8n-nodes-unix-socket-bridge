@@ -72,7 +72,7 @@ function hashToken(token: string): string {
  * @example
  * // Basic usage with auto-discovery
  * const node = new UnixSocketBridge();
- * // Configure socket path: /tmp/playerctl.sock
+ * // Configure socket path: /tmp/socket-bridge/playerctl.sock
  * // Enable auto-discovery to see available commands
  * // Select command from dropdown and execute
  *
@@ -110,8 +110,8 @@ export class UnixSocketBridge implements INodeType {
         displayName: "Socket Path",
         name: "socketPath",
         type: "string",
-        default: "/tmp/socket.sock",
-        placeholder: "/tmp/socket.sock",
+        default: "/tmp/socket-bridge/service.sock",
+        placeholder: "/tmp/socket-bridge/service.sock",
         description: "Path to the Unix domain socket file",
         required: true,
       },

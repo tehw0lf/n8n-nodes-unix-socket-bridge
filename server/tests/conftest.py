@@ -33,7 +33,7 @@ def sample_config():
         "description": "A test server for unit testing",
         "version": "1.0.0",
         "socket_path": "/tmp/test.sock",
-        "socket_permissions": 438,
+        "socket_permissions": 666,
         "log_level": "INFO",
         "allowed_executable_dirs": [
             "/usr/bin/",

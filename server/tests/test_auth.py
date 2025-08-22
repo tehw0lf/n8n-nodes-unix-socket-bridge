@@ -35,11 +35,30 @@ def test_auth_disabled():
     """Test authentication when disabled"""
     print("=== Testing AUTH_ENABLED=false ===")
     
+    # Create temporary config file
+    import tempfile
+    test_config = {
+        "name": "Test Auth Disabled Server",
+        "socket_path": "/tmp/test-auth-disabled.sock",
+        "allowed_executable_dirs": ["/bin/", "/usr/bin/"],
+        "commands": {
+            "__ping__": {
+                "description": "Test ping",
+                "executable": ["echo", "pong"],
+                "timeout": 5
+            }
+        }
+    }
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(test_config, f)
+        test_config_path = f.name
+    
     # Start server with auth disabled
     env = os.environ.copy()
     env['AUTH_ENABLED'] = 'false'
     server_proc = subprocess.Popen([
-        'python3', os.path.join(os.path.dirname(os.path.dirname(__file__)), 'socket-server.py'), os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'examples', 'playerctl.json')
+        'python3', os.path.join(os.path.dirname(os.path.dirname(__file__)), 'socket-server.py'), test_config_path
     ], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
     # Give server time to start
@@ -47,14 +66,14 @@ def test_auth_disabled():
     
     try:
         # Test without token - should work
-        response = send_request('/tmp/playerctl.sock', {
+        response = send_request('/tmp/test-auth-disabled.sock', {
             'command': '__ping__'
         })
         print(f"Request without token: {response}")
         assert response['success'] == True, "Request should succeed when auth disabled"
         
         # Test with token - should also work (token ignored)
-        response = send_request('/tmp/playerctl.sock', {
+        response = send_request('/tmp/test-auth-disabled.sock', {
             'command': '__ping__',
             'auth_token': 'any-token'
         })
@@ -66,6 +85,7 @@ def test_auth_disabled():
     finally:
         server_proc.terminate()
         server_proc.wait()
+        os.unlink(test_config_path)
 
 def test_auth_enabled():
     """Test authentication when enabled"""

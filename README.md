@@ -52,31 +52,33 @@ The socket server is a Python script that exposes your system commands to n8n:
 git clone https://github.com/yourusername/unix-socket-bridge.git
 cd unix-socket-bridge
 
-# Install server and example configurations
+# Install server (and example configurations)
 sudo cp server/socket-server.py /usr/local/bin/unix-socket-server
 sudo chmod +x /usr/local/bin/unix-socket-server
+sudo chown your-username:your-group /usr/local/bin/unix-socket-server
 sudo mkdir -p /etc/socket-bridge
-sudo cp examples/* /etc/socket-bridge/
+sudo cp examples/* /etc/socket-bridge/ # optional
+sudo chown -R your-username:your-group /etc/socket-bridge
 ```
 
 ## 📖 Quick Start
 
 ### 1. Start a Socket Server
 
-Use one of the included example configurations:
+Use one of the example configurations from the `examples/` directory:
 
 ```bash
 # For media player control
-python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/playerctl.json
+python3 /usr/local/bin/unix-socket-server examples/playerctl.json
 
-# For system monitoring
-python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/system-control.json
+# For system monitoring  
+python3 /usr/local/bin/unix-socket-server examples/system-control.json
 ```
 
 ### 2. Use in n8n
 
 1. **Add the Unix Socket Bridge node** to your workflow
-2. **Configure the socket path**: `/tmp/playerctl.sock` (or your custom path)
+2. **Configure the socket path**: The path from your config (e.g., `/tmp/socket-bridge/playerctl.sock`)
 3. **Select a command** from the auto-populated dropdown
 4. **Configure parameters** if needed
 5. **Execute your workflow!** 🎉
@@ -101,31 +103,38 @@ unix-socket-client /tmp/playerctl.sock introspect
 
 ### Authentication
 
-The Unix Socket Bridge supports secure token-based authentication to protect your services:
+The Unix Socket Bridge supports secure token-based authentication. You can configure authentication in two ways:
 
-#### Enable Authentication
+#### Method 1: Configuration File (Recommended)
+Add authentication directly to your config file:
+```json
+{
+  "auth_enabled": true,
+  "auth_token_hash": "e06b5a4f194b95775ffd36453d8abaea0226a1d8b127ad9ce96357d9eda64b51",
+  "commands": { ... }
+}
+```
+
+#### Method 2: Environment Variables
 ```bash
-# Using hashed tokens (recommended for production)
 export AUTH_ENABLED=true
 export AUTH_TOKEN_HASH=e06b5a4f194b95775ffd36453d8abaea0226a1d8b127ad9ce96357d9eda64b51
-python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/playerctl.json
-
-# Using plaintext tokens (development only)
-export AUTH_ENABLED=true
-export AUTH_TOKEN=your-secret-token
-python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/playerctl.json
+python3 /usr/local/bin/unix-socket-server /path/to/config.json
 ```
 
 #### Generate Secure Token Hash
 ```bash
-# Generate a secure hash for your token
+# Use the included generator (recommended)
+python3 server/generate-token-hash.py
+
+# Or manually generate
 echo -n "your-secret-token" | sha256sum
 ```
 
 #### Configure n8n Node
-In your n8n workflow, add the authentication token to the Unix Socket Bridge node:
-- Set **Auth Token** field to your plaintext token
-- The node will authenticate with the server automatically
+In your n8n workflow:
+- Set the **Auth Token** field to your original plaintext token
+- The node automatically hashes it for secure transmission
 
 ### Rate Limiting
 
@@ -145,8 +154,8 @@ Add to your server configuration file:
 ```json
 {
   "name": "Secure Service",
-  "socket_path": "/tmp/secure.sock",
-  "socket_permissions": 600,
+  "socket_path": "/tmp/socket-bridge/secure.sock",
+  "socket_permissions": 666,
   "max_request_size": 1048576,
   "max_output_size": 100000,
   "enable_rate_limit": true,
@@ -199,7 +208,7 @@ Create a JSON configuration file for your commands:
 {
   "name": "My Custom Service",
   "description": "Description of your service",
-  "socket_path": "/tmp/my-service.sock",
+  "socket_path": "/tmp/socket-bridge/my-service.sock",
   "commands": {
     "my-command": {
       "description": "What this command does",
@@ -223,39 +232,44 @@ python3 /usr/local/bin/unix-socket-server /path/to/your/config.json
 
 ## 📚 Configuration Examples
 
-### PlayerCtl Media Control
-Control media players on your system:
-```json
-{
-  "name": "PlayerCtl Media Control",
-  "socket_path": "/tmp/playerctl.sock",
-  "commands": {
-    "play-pause": {
-      "description": "Toggle play/pause",
-      "executable": ["playerctl", "play-pause"]
-    },
-    "next": {
-      "description": "Next track",
-      "executable": ["playerctl", "next"]
-    }
-  }
-}
-```
+### Version 1.3.0 Security Enhancements
 
-### System Monitoring
-Monitor system resources:
+All example configurations in the `examples/` directory have been updated with:
+
+- **🔒 Strict Parameter Validation**: Enhanced input validation with length limits
+- **📁 Runtime Directory Templating**: `{RUNTIME_DIR}` for user-specific socket paths  
+- **🛡️ Reduced Socket Permissions**: Changed from 438 to 420 for better security
+- **📏 Optimized Size Limits**: 4KB request limits for better resource management
+- **🚫 No Shell Execution**: Direct command execution without `bash -c` wrappers
+
+### Available Examples
+
+- **`examples/playerctl.json`** - Media player control (play, pause, metadata, etc.)
+- **`examples/playerctl-secure.json`** - Same as above with authentication enabled  
+- **`examples/system-control.json`** - System monitoring (disk, memory, network, etc.)
+
+### Deployment Patterns
+
+**For systemd user services (recommended):**
+- Copy configs to `~/.config/socket-bridge/`
+- Use the user service template for automatic startup
+- Clean separation from system configs
+
+**For manual/testing:**
+- Use configs directly from `examples/`
+- Sockets created in `/tmp/socket-bridge/`
+
+### Basic Configuration Structure
 ```json
 {
-  "name": "System Monitor",
-  "socket_path": "/tmp/system.sock",
+  "name": "Your Service Name",
+  "socket_path": "/tmp/socket-bridge/service.sock",
+  "auth_enabled": false,
   "commands": {
-    "disk-usage": {
-      "description": "Check disk usage",
-      "executable": ["df", "-h"]
-    },
-    "memory": {
-      "description": "Check memory usage",
-      "executable": ["free", "-h"]
+    "command-name": {
+      "description": "What this command does",
+      "executable": ["command", "arg1", "arg2"],
+      "timeout": 10
     }
   }
 }
@@ -263,7 +277,43 @@ Monitor system resources:
 
 ## 🔐 Running as a System Service
 
-For production use, run the socket server as a systemd service:
+### User Services (Recommended)
+
+For user-specific services (when you need access to user sessions like DBUS), use the included user service template:
+
+```bash
+# Install the user service template
+sudo cp systemd/socket-bridge-user@.service /etc/systemd/user/
+sudo systemctl daemon-reload
+
+# Create user configuration directory
+mkdir -p ~/.config/socket-bridge
+
+# Copy example configurations
+cp examples/playerctl.json ~/.config/socket-bridge/
+cp examples/system-control.json ~/.config/socket-bridge/
+
+# Enable and start user services
+systemctl --user enable socket-bridge-user@playerctl.service
+systemctl --user start socket-bridge-user@playerctl.service
+
+systemctl --user enable socket-bridge-user@system-control.service  
+systemctl --user start socket-bridge-user@system-control.service
+
+# Check status
+systemctl --user status socket-bridge-user@playerctl.service
+journalctl --user -u socket-bridge-user@playerctl.service -f
+```
+
+The user service template (`socket-bridge-user@.service`) provides:
+- **User-specific execution**: Runs as your user with access to your DBUS session
+- **Enhanced security**: `NoNewPrivileges`, `ProtectSystem=strict`
+- **User isolation**: `ProtectHome=read-only` for security
+- **Automatic restart**: Service restarts on failure
+
+### System Services (Alternative)
+
+For system-wide services (requires configuring User= to match the user with required access):
 
 ```bash
 # Create service file
@@ -279,11 +329,12 @@ After=network.target
 Type=simple
 ExecStart=/usr/bin/python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/playerctl.json
 Restart=always
-User=www-data
+User=your-username  # Must be user with access to playerctl/DBUS
+# Essential for DBUS/playerctl access in systemd context
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 Environment=AUTH_ENABLED=true
 Environment=AUTH_TOKEN_HASH=your-hashed-token-here
-Environment=AUTH_MAX_ATTEMPTS=5
-Environment=AUTH_WINDOW_SECONDS=60
 
 [Install]
 WantedBy=multi-user.target

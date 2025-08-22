@@ -1,20 +1,22 @@
 {
   "name": "System Control Bridge",
   "description": "Safe system control commands",
-  "version": "1.0.0",
-  "socket_path": "/tmp/system-control.sock",
-  "socket_permissions": 438,
+  "version": "1.3.0",
+  "socket_path": "/tmp/socket-bridge/system-control.sock",
+  "socket_permissions": 666,
   "log_level": "INFO",
   "enable_rate_limit": true,
   "rate_limit": {
     "requests": 30,
     "window": 60
   },
-  "max_request_size": 1048576,
+  "max_request_size": 4096,
   "max_output_size": 100000,
   "enable_threading": false,
   "debug": false,
+  "strict_parameter_validation": true,
   "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
+  "auth_enabled": false,
   "commands": {
     "disk-usage": {
       "description": "Check disk usage",
@@ -35,6 +37,16 @@
       "description": "CPU information",
       "executable": ["lscpu"],
       "timeout": 10
+    },
+    "load-average": {
+      "description": "System load average",
+      "executable": ["cat", "/proc/loadavg"],
+      "timeout": 5
+    },
+    "network-interfaces": {
+      "description": "List network interfaces",
+      "executable": ["ip", "addr", "show"],
+      "timeout": 5
     }
   }
 }

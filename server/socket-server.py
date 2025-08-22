@@ -19,6 +19,7 @@ from time import time
 import threading
 import secrets
 import hashlib
+import pwd
 
 class AuthRateLimiter:
     """Rate limiter for authentication attempts"""
@@ -219,6 +220,9 @@ class ConfigurableSocketServer:
         try:
             with open(config_path, 'r') as f:
                 config = json.load(f)
+
+            # NEW: Replace template variables for portable configs
+            config = self._expand_config_templates(config)
             
             # Validate required fields
             required_fields = ['name', 'socket_path', 'commands']
@@ -240,6 +244,59 @@ class ConfigurableSocketServer:
         except Exception as e:
             print(f"Error loading config: {e}")
             sys.exit(1)
+    
+    def _expand_config_templates(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Expand template variables in configuration for portability
+        
+        Supported templates:
+        - {RUNTIME_DIR}: XDG_RUNTIME_DIR or /run/user/{uid}
+        - {UID}: Current user ID
+        - {USER}: Current username
+        - {HOME}: User home directory
+        """
+        # Get current user info
+        uid = os.getuid()
+        try:
+            user_info = pwd.getpwuid(uid)
+            username = user_info.pw_name
+            home_dir = user_info.pw_dir
+        except KeyError:
+            username = str(uid)
+            home_dir = os.path.expanduser('~')
+        
+        # Determine runtime directory
+        runtime_dir = os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{uid}')
+        
+        # Template replacements
+        templates = {
+            '{RUNTIME_DIR}': runtime_dir,
+            '{UID}': str(uid),
+            '{USER}': username,
+            '{HOME}': home_dir,
+        }
+        
+        # Log template expansion for debugging (if logger is available)
+        if hasattr(self, 'logger'):
+            self.logger.debug(f"Template expansion: UID={uid}, USER={username}, RUNTIME_DIR={runtime_dir}")
+        
+        # Recursive function to replace templates in strings
+        def replace_templates(obj):
+            if isinstance(obj, str):
+                result = obj
+                for template, value in templates.items():
+                    if template in result:
+                        result = result.replace(template, value)
+                        if hasattr(self, 'logger'):
+                            self.logger.debug(f"Expanded '{template}' to '{value}' in: {obj[:50]}...")
+                return result
+            elif isinstance(obj, dict):
+                return {k: replace_templates(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [replace_templates(item) for item in obj]
+            else:
+                return obj
+        
+        return replace_templates(config)
     
     def validate_executable_path(self, executable: List[str], config = None) -> bool:
         """Validate that executable is in allowed paths"""
@@ -328,6 +385,24 @@ class ConfigurableSocketServer:
         if param_type == 'string' and 'max_length' in param_config:
             if len(value) > param_config['max_length']:
                 return False
+        
+        # NEW: Default validation for strings without explicit rules
+        if param_type == 'string' and isinstance(value, str):
+            if 'pattern' not in param_config and 'enum' not in param_config:
+                # Check if strict mode is disabled (opt-out)
+                if self.config.get('strict_parameter_validation', True):
+                    # Conservative default: alphanumeric + basic safe punctuation
+                    default_pattern = r'^[a-zA-Z0-9._\-\s]+$'
+                    if not re.match(default_pattern, value):
+                        self.logger.warning(
+                            f"Parameter value '{value}' failed default validation. "
+                            f"Consider adding explicit 'pattern' or 'enum' validation in config."
+                        )
+                        return False
+                    else:
+                        self.logger.debug(
+                            f"Applied default validation pattern to parameter (value: '{value}')"
+                        )
                 
         return True
     
@@ -402,6 +477,8 @@ class ConfigurableSocketServer:
         try:
             # Execute with security restrictions
             env = cmd_config.get('env', {'PATH': '/usr/bin:/bin'})  # Allow custom env or use restricted default
+            # NEW: Expand templates in environment variables
+            env = self._expand_env_templates(env)
             cwd = cmd_config.get('cwd', '/')  # Safe working directory
             timeout = cmd_config.get('timeout', 10)
             
@@ -463,6 +540,44 @@ class ConfigurableSocketServer:
                 response['parse_error'] = 'Output is not valid JSON'
                 
         return response
+    
+    def _expand_env_templates(self, env: Dict[str, str]) -> Dict[str, str]:
+        """Expand templates in environment variables
+        
+        If DBUS_SESSION_BUS_ADDRESS is not set but needed, try to detect it.
+        """
+        env = env.copy()
+        
+        # Apply same template expansion as in config
+        uid = os.getuid()
+        runtime_dir = os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{uid}')
+        
+        templates = {
+            '{RUNTIME_DIR}': runtime_dir,
+            '{UID}': str(uid),
+        }
+        
+        for key, value in env.items():
+            if isinstance(value, str):
+                for template, replacement in templates.items():
+                    if template in value:
+                        value = value.replace(template, replacement)
+                env[key] = value
+        
+        # Auto-detect DBUS if not set (useful for playerctl-like commands)
+        if 'DBUS_SESSION_BUS_ADDRESS' not in env:
+            # Check if it's in the current environment (systemd user service)
+            if 'DBUS_SESSION_BUS_ADDRESS' in os.environ:
+                env['DBUS_SESSION_BUS_ADDRESS'] = os.environ['DBUS_SESSION_BUS_ADDRESS']
+                self.logger.debug("Inherited DBUS_SESSION_BUS_ADDRESS from environment")
+            else:
+                # Try standard location (systemd system service running as specific user)
+                dbus_path = f'{runtime_dir}/bus'
+                if os.path.exists(dbus_path):
+                    env['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path={dbus_path}'
+                    self.logger.debug(f"Auto-detected DBUS_SESSION_BUS_ADDRESS: {dbus_path}")
+        
+        return env
     
     def receive_full_message(self, client_socket: socket.socket) -> str:
         """Receive a complete message from client with size limits"""
@@ -594,12 +709,26 @@ class ConfigurableSocketServer:
             if os.path.exists(self.socket_path):
                 os.unlink(self.socket_path)
                 
+            # Create parent directory if it doesn't exist
+            socket_dir = os.path.dirname(self.socket_path)
+            if socket_dir and not os.path.exists(socket_dir):
+                # Use 755 for shared access when using /tmp or similar shared locations
+                dir_mode = 0o755 if socket_dir.startswith('/tmp') else 0o700
+                os.makedirs(socket_dir, mode=dir_mode, exist_ok=True)
+                self.logger.debug(f"Created socket directory: {socket_dir} with mode {oct(dir_mode)}")
+                
             # Create socket
             self.server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self.server_socket.bind(self.socket_path)
             
             # Set permissions
             permissions = self.config.get('socket_permissions', 0o666)
+            # Convert decimal to octal if needed (e.g., 777 -> 0o777)
+            if isinstance(permissions, int) and permissions > 0o777:
+                # Assume decimal representation (e.g., 777 means 0o777)
+                octal_str = str(permissions)
+                if len(octal_str) == 3 and all(c in '01234567' for c in octal_str):
+                    permissions = int(octal_str, 8)
             os.chmod(self.socket_path, permissions)
             
             self.server_socket.listen(5)
@@ -729,8 +858,8 @@ def main():
         example_config = {
             "name": "Example Server",
             "description": "Example configuration for Unix Socket Server",
-            "socket_path": "/tmp/example.sock",
-            "socket_permissions": 438,  # 0o666 in decimal
+            "socket_path": "/tmp/socket-bridge/example.sock",
+            "socket_permissions": 666,  # Read/write for all users
             "log_level": "INFO",
             "enable_rate_limit": True,
             "rate_limit": {
@@ -740,6 +869,7 @@ def main():
             "max_request_size": 1048576,
             "max_output_size": 100000,
             "enable_threading": False,
+            "strict_parameter_validation": True,
             "allowed_executable_dirs": [
                 "/usr/bin/",
                 "/bin/",
@@ -756,6 +886,7 @@ def main():
                             "type": "string",
                             "required": True,
                             "style": "argument",
+                            "pattern": "^[a-zA-Z0-9._\\-\\s!?,]+$",
                             "max_length": 1000
                         }
                     }
@@ -764,6 +895,24 @@ def main():
                     "description": "Get current date",
                     "executable": ["date"],
                     "timeout": 5
+                },
+                "playerctl_play": {
+                    "description": "Control media playback",
+                    "executable": ["playerctl", "play"],
+                    "timeout": 5,
+                    "env": {
+                        "PATH": "/usr/bin:/bin"
+                    },
+                    "parameters": {
+                        "player": {
+                            "description": "Player name (e.g., spotify, firefox)",
+                            "type": "string",
+                            "required": False,
+                            "style": "flag",
+                            "pattern": "^[a-zA-Z0-9._-]+$",
+                            "max_length": 50
+                        }
+                    }
                 }
             }
         }
@@ -777,6 +926,7 @@ def main():
         print(f"✅ Configuration is valid")
         print(f"Server: {server.config['name']}")
         print(f"Socket: {server.config['socket_path']}")
+        print(f"Runtime user: {os.getuid()} ({pwd.getpwuid(os.getuid()).pw_name})")
         print(f"Commands: {list(server.config['commands'].keys())}")
         print(f"Rate limiting: {'Enabled' if server.config.get('enable_rate_limit', True) else 'Disabled'}")
         print(f"Threading: {'Enabled' if server.config.get('enable_threading', False) else 'Disabled'}")

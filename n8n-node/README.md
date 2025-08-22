@@ -51,6 +51,7 @@ Create a configuration file for your commands (e.g., `system-monitor.json`):
 {
   "name": "System Monitor",
   "socket_path": "/tmp/system.sock",
+  "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
   "commands": {
     "uptime": {
       "description": "Get system uptime",
@@ -70,7 +71,7 @@ Create a configuration file for your commands (e.g., `system-monitor.json`):
 
 Start the server:
 ```bash
-python3 socket-server.py system-monitor.json
+python3 /usr/local/bin/unix-socket-server system-monitor.json
 ```
 
 ### 2. Use in n8n
@@ -95,10 +96,17 @@ For servers with authentication enabled:
 - The node automatically handles authentication with the server
 - Leave empty for servers without authentication
 
+See `examples/playerctl-secure.json` for a complete authentication configuration example.
+
 ### Advanced Options
 - **Max Response Size**: Limit response size for memory safety (default: 1MB)
 - **Include Metadata**: Include execution metadata in responses
 - **Timeout**: Connection timeout in milliseconds (default: 5000ms)
+
+### Server Configuration Requirements
+All server configurations must include:
+- **`allowed_executable_dirs`**: Security allowlist of directories containing executables
+- **`commands`**: Dictionary of available commands with descriptions and executables
 
 ### Operation Modes
 
@@ -130,6 +138,7 @@ Control media players (using playerctl):
 {
   "name": "Media Control",
   "socket_path": "/tmp/playerctl.sock",
+  "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
   "commands": {
     "play-pause": {
       "description": "Toggle play/pause",
@@ -153,6 +162,7 @@ Integrate Docker operations:
 {
   "name": "Docker Control",
   "socket_path": "/tmp/docker.sock",
+  "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
   "commands": {
     "list": {
       "description": "List containers",
@@ -180,6 +190,7 @@ Run any custom script or command:
 {
   "name": "Custom Scripts",
   "socket_path": "/tmp/scripts.sock",
+  "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
   "commands": {
     "backup": {
       "description": "Run backup script",
@@ -214,22 +225,47 @@ Get the server from the [main repository](https://github.com/tehw0lf/n8n-nodes-u
 
 ## Production Setup
 
-For production use, run the socket server as a systemd service with authentication:
+### User Services (Recommended)
+
+For production use, run socket servers as user systemd services. This provides better security and access to user sessions:
+
+```bash
+# Install the user service template
+sudo cp systemd/socket-bridge-user@.service /etc/systemd/user/
+sudo systemctl daemon-reload
+
+# Create user configuration directory
+mkdir -p ~/.config/socket-bridge
+
+# Copy your configuration (e.g., playerctl.json)
+cp your-config.json ~/.config/socket-bridge/
+
+# Enable and start the service
+systemctl --user enable socket-bridge-user@your-config.service
+systemctl --user start socket-bridge-user@your-config.service
+
+# Check status
+systemctl --user status socket-bridge-user@your-config.service
+```
+
+### System Services (Alternative)
+
+For system-wide services, ensure proper user configuration for DBUS access:
 
 ```ini
 [Unit]
-Description=Unix Socket Bridge
+Description=Unix Socket Bridge - Your Service
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/bin/socket-server.py /etc/socket-bridge/config.json
+ExecStart=/usr/bin/python3 /usr/local/bin/unix-socket-server /etc/socket-bridge/config.json
 Restart=always
-User=www-data
+User=your-username
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 Environment=AUTH_ENABLED=true
 Environment=AUTH_TOKEN_HASH=your-hashed-token-here
-Environment=AUTH_MAX_ATTEMPTS=5
-Environment=AUTH_WINDOW_SECONDS=60
 
 [Install]
 WantedBy=multi-user.target
@@ -239,6 +275,10 @@ WantedBy=multi-user.target
 
 Generate a secure token hash:
 ```bash
+# Use the included generator (recommended)
+python3 server/generate-token-hash.py
+
+# Or manually generate
 echo -n "your-secret-token" | sha256sum
 ```
 
@@ -251,9 +291,9 @@ Use the hash in your systemd service and the plaintext token in your n8n node co
 - Check n8n logs for any errors
 
 ### Commands not showing in dropdown?
-- Verify the socket server is running: `ps aux | grep socket-server`
+- Verify the socket server is running: `ps aux | grep unix-socket-server`
 - Check if the socket file exists: `ls -la /tmp/*.sock`
-- Test the connection with the CLI client
+- Test the connection: `unix-socket-client /tmp/your-socket.sock ping`
 
 ### Connection errors?
 - Check socket file permissions

@@ -1,0 +1,21 @@
+[Unit]
+Description=Unix Socket Bridge - %i (User Service)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/socket-server %h/.config/socket-bridge/%i.json
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
+
+# Security settings
+NoNewPrivileges=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

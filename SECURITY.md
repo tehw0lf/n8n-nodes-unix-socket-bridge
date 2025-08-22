@@ -65,7 +65,7 @@ This outputs:
 ```
 ```bash
 export AUTH_TOKEN_HASH="d3ba8af26682896ea7a3305e4bc76b2c1ad1a2778d5569e66859113d5ccf7926"
-python3 socket-server.py config.json
+python3 /usr/local/bin/unix-socket-server config.json
 ```
 
 **Option B: Configuration File Only**
@@ -111,8 +111,9 @@ export AUTH_BLOCK_DURATION=60
 ### Input Validation
 - **Command Allowlisting**: Only predefined commands can be executed
 - **Parameter Validation**: Regex patterns validate all parameters
-- **Path Restrictions**: Executable paths must be in allowed directories
+- **Path Restrictions**: Executable paths must be in allowed directories (`allowed_executable_dirs`)
 - **Size Limits**: Request and response size limits prevent DoS
+- **Security Requirement**: All configurations must include `allowed_executable_dirs` field
 
 ### Logging and Monitoring
 - **Authentication Events**: All auth attempts are logged
@@ -134,10 +135,11 @@ export AUTH_BLOCK_DURATION=60
 ### Server Configuration
 - ✅ **Enable authentication** in production (`AUTH_ENABLED=true`)
 - ✅ **Use restrictive file permissions** for socket files
-- ✅ **Limit executable directories** (`allowed_executable_dirs`)
+- ✅ **Limit executable directories** (`allowed_executable_dirs` - REQUIRED field)
 - ✅ **Set appropriate timeouts** to prevent hanging processes
 - ✅ **Enable rate limiting** to prevent abuse
 - ✅ **Run with minimal privileges** (non-root user)
+- ✅ **Include all required fields** in configuration (name, socket_path, allowed_executable_dirs, commands)
 
 ### Network Security
 - ✅ **Use Unix domain sockets** (more secure than TCP)
@@ -176,9 +178,37 @@ export LOG_LEVEL=WARNING           # Reduce log verbosity
 ```
 
 ### Service Configuration
+
+#### User Services (Recommended)
+
+For user-specific services with access to user sessions:
+
+```bash
+# Install the user service template
+sudo cp systemd/socket-bridge-user@.service /etc/systemd/user/
+sudo systemctl daemon-reload
+
+# Create user configuration directory
+mkdir -p ~/.config/socket-bridge
+
+# Copy your secure configuration
+cp examples/playerctl-secure.json ~/.config/socket-bridge/
+
+# Set authentication token hash
+echo "AUTH_TOKEN_HASH=your-secure-hash" > ~/.config/socket-bridge/.env
+
+# Enable and start the service
+systemctl --user enable socket-bridge-user@playerctl-secure.service
+systemctl --user start socket-bridge-user@playerctl-secure.service
+```
+
+#### System Services (Alternative)
+
+For system-wide services:
+
 ```bash
 # Create systemd service
-sudo cp socket-server.py /usr/local/bin/unix-socket-server
+sudo cp server/socket-server.py /usr/local/bin/unix-socket-server
 sudo chmod +x /usr/local/bin/unix-socket-server
 
 # Create service file
@@ -189,8 +219,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=socketbridge
-Group=socketbridge
+User=your-username
+Group=your-group
 WorkingDirectory=/opt/unix-socket-bridge
 ExecStart=/usr/local/bin/unix-socket-server /opt/unix-socket-bridge/config.json
 Restart=always
@@ -202,7 +232,9 @@ ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
 
-# Environment variables
+# Environment variables for DBUS access (if needed)
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
 EnvironmentFile=/opt/unix-socket-bridge/.env
 
 [Install]
@@ -212,14 +244,17 @@ EOF
 
 ### Monitoring and Alerting
 ```bash
-# Monitor authentication failures
+# Monitor authentication failures (user service)
+journalctl --user -u socket-bridge-user@yourconfig.service -f | grep "Failed authentication"
+
+# Monitor rate limiting events (user service)
+journalctl --user -u socket-bridge-user@yourconfig.service -f | grep "rate_limited"
+
+# Monitor authentication failures (system service)
 journalctl -u unix-socket-bridge.service -f | grep "Failed authentication"
 
-# Monitor rate limiting events
-journalctl -u unix-socket-bridge.service -f | grep "rate_limited"
-
 # Monitor socket file permissions
-ls -la /tmp/*.sock
+ls -la /tmp/socket-bridge/*.sock
 ```
 
 ## 🚩 Security Incident Response
@@ -248,6 +283,9 @@ ls -la /tmp/*.sock
 - [ ] Socket file permissions set correctly
 - [ ] Service runs with minimal privileges
 - [ ] Logging configured for security events
+- [ ] All configurations include `allowed_executable_dirs` field
+- [ ] User systemd services configured (recommended)
+- [ ] CLI client testing completed
 
 ### Production Monitoring
 - [ ] Authentication failure alerts configured

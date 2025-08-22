@@ -4,21 +4,19 @@ After=network.target
 
 [Service]
 Type=simple
-User=socket-bridge
-Group=socket-bridge
-ExecStart=/usr/local/bin/socket-server /etc/socket-bridge/%i.json
+User=your-username
+Group=your-username
+# Add session environment for DBUS access (adjust UID as needed)
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+ExecStart=/usr/local/bin/unix-socket-server /etc/socket-bridge/%i.json
 Restart=always
 RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
 
 # Security settings
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-
-# Runtime directory
-RuntimeDirectory=socket-bridge
-RuntimeDirectoryMode=0755
 
 # Logging
 StandardOutput=journal

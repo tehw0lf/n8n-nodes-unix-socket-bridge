@@ -1,82 +1,125 @@
 {
   "name": "PlayerCtl Media Control",
   "description": "Control media players using playerctl",
-  "version": "1.0.0",
-  "socket_path": "/tmp/playerctl.sock",
-  "socket_permissions": 438,
+  "version": "1.3.0",
+  "socket_path": "/tmp/socket-bridge/playerctl.sock",
+  "socket_permissions": 666,
   "log_level": "INFO",
   "enable_rate_limit": true,
   "rate_limit": {
     "requests": 30,
     "window": 60
   },
-  "max_request_size": 1048576,
-  "max_output_size": 100000,
+  "max_request_size": 4096,
+  "max_output_size": 10000,
   "enable_threading": false,
   "debug": false,
+  "strict_parameter_validation": true,
   "allowed_executable_dirs": ["/usr/bin/", "/bin/", "/usr/local/bin/"],
   "auth_enabled": false,
   "commands": {
     "play": {
       "description": "Start playback",
-      "executable": [
-        "bash",
-        "-c",
-        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl play"
-      ],
+      "executable": ["playerctl", "play"],
       "timeout": 5,
       "parameters": {
         "player": {
           "description": "Specific player to control",
           "type": "string",
           "required": false,
-          "style": "flag",
-          "pattern": "^[a-zA-Z0-9._-]+$"
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
         }
       }
     },
     "pause": {
       "description": "Pause playback",
-      "executable": [
-        "bash",
-        "-c",
-        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl pause"
-      ],
+      "executable": ["playerctl", "pause"],
       "timeout": 5,
       "parameters": {
         "player": {
           "description": "Specific player to control",
           "type": "string",
           "required": false,
-          "style": "flag",
-          "pattern": "^[a-zA-Z0-9._-]+$"
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
         }
       }
     },
     "play-pause": {
       "description": "Toggle play/pause",
-      "executable": [
-        "bash",
-        "-c",
-        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl play-pause"
-      ],
+      "executable": ["playerctl", "play-pause"],
       "timeout": 5,
       "parameters": {
         "player": {
           "description": "Specific player to control",
           "type": "string",
           "required": false,
-          "style": "flag",
-          "pattern": "^[a-zA-Z0-9._-]+$"
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
         }
       }
     },
     "status": {
       "description": "Get current playback status",
+      "executable": ["playerctl", "status"],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
+        }
+      }
+    },
+    "next": {
+      "description": "Skip to next track",
+      "executable": ["playerctl", "next"],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
+        }
+      }
+    },
+    "previous": {
+      "description": "Skip to previous track",
+      "executable": ["playerctl", "previous"],
+      "timeout": 5,
+      "parameters": {
+        "player": {
+          "description": "Specific player to control",
+          "type": "string",
+          "required": false,
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
+        }
+      }
+    },
+    "list-players": {
+      "description": "List available media players",
+      "executable": ["playerctl", "--list-all"],
+      "timeout": 5
+    },
+    "metadata": {
+      "description": "Get current track metadata",
       "executable": [
-        "bash",
-        "-c",
-        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus playerctl status"
+        "playerctl",
+        "metadata",
+        "--format",
+        "Artist: {{artist}}\nTitle: {{title}}\nAlbum: {{album}}"
       ],
       "timeout": 5,
       "parameters": {
@@ -84,8 +127,9 @@
           "description": "Specific player to control",
           "type": "string",
           "required": false,
-          "style": "flag",
-          "pattern": "^[a-zA-Z0-9._-]+$"
+          "style": "single_flag",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "max_length": 50
         }
       }
     }
