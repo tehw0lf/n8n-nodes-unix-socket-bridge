@@ -15,6 +15,9 @@ RestartSec=5
 KillMode=mixed
 TimeoutStopSec=10
 
+# Explicit umask for shared socket access
+UMask=0022
+
 # Security settings
 NoNewPrivileges=true
 
