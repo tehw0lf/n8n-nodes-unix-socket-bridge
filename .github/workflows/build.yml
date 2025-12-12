@@ -14,6 +14,7 @@ jobs:
       actions: write
       contents: write
       packages: write
+      id-token: write
     with:
       tool: "npm"
       test: "run test"
@@ -24,5 +25,3 @@ jobs:
       library_path: "dist"
       root_dir: "n8n-node"
       n8n_verifiable_node: "false"
-    secrets:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
