@@ -256,7 +256,7 @@ describe("UnixSocketBridge Integration Tests", () => {
           );
 
           done();
-        } catch (error) {
+        } catch {
           // Expected error
           done();
         }
@@ -321,7 +321,7 @@ describe("UnixSocketBridge Integration Tests", () => {
           );
 
           done();
-        } catch (error) {
+        } catch {
           // Expected to throw
           done();
         }

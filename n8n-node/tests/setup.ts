@@ -4,7 +4,7 @@
 
 // Mock n8n-workflow for testing
 jest.mock("n8n-workflow", () => ({
-  NodeConnectionType: {
+  NodeConnectionTypes: {
     Main: "main",
   },
   NodeOperationError: class extends Error {

@@ -38,7 +38,7 @@ export async function healthCheck(
           response.success === true && response.message === "pong";
         socket.destroy();
         resolve(isHealthy);
-      } catch (error) {
+      } catch {
         socket.destroy();
         resolve(false);
       }
@@ -59,7 +59,7 @@ export async function healthCheck(
     // Attempt to connect
     try {
       socket.connect(socketPath);
-    } catch (error) {
+    } catch {
       clearTimeout(timeout);
       resolve(false);
     }

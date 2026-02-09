@@ -337,7 +337,7 @@ describe("Unix Socket Bridge E2E Tests", () => {
 
         await expect(() =>
           unixSocketBridge.execute.call(mockContext)
-        ).rejects.toThrowError(
+        ).rejects.toThrow(
           "Socket error: Socket not found at /tmp/nonexistent-socket.sock"
         );
       },

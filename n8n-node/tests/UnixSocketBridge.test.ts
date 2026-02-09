@@ -38,7 +38,7 @@ describe("UnixSocketBridge", () => {
     it("should have correct node metadata", () => {
       expect(node.description.displayName).toBe("Unix Socket Bridge");
       expect(node.description.name).toBe("unixSocketBridge");
-      expect(node.description.group).toContain("communication");
+      expect(node.description.group).toContain("transform");
       expect(node.description.version).toBe(1);
     });
 

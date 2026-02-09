@@ -57,7 +57,7 @@ describe("UnixSocketBridge Credential Picker", () => {
         if (credentials && credentials.value) {
           authToken = credentials.value as string;
         }
-      } catch (error) {
+      } catch {
         // Credentials not configured - authentication will be skipped
       }
 
@@ -75,7 +75,7 @@ describe("UnixSocketBridge Credential Picker", () => {
         if (credentials && credentials.value) {
           authToken = credentials.value as string;
         }
-      } catch (error) {
+      } catch {
         // Credentials not configured - authentication will be skipped
       }
 
@@ -93,7 +93,7 @@ describe("UnixSocketBridge Credential Picker", () => {
         if (credentials && credentials.value) {
           authToken = credentials.value as string;
         }
-      } catch (error) {
+      } catch {
         // Credentials not configured
       }
 

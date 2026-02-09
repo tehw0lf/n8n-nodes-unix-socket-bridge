@@ -5,7 +5,7 @@ import {
   INodePropertyOptions,
   INodeType,
   INodeTypeDescription,
-  NodeConnectionType,
+  NodeConnectionTypes,
   NodeOperationError,
 } from "n8n-workflow";
 import * as net from "net";
@@ -89,7 +89,7 @@ export class UnixSocketBridge implements INodeType {
     displayName: "Unix Socket Bridge",
     name: "unixSocketBridge",
     icon: "fa:plug",
-    group: ["communication"],
+    group: ["transform"],
     version: 1,
     subtitle:
       '={{$parameter["autoDiscover"] ? $parameter["discoveredCommand"] : $parameter["command"]}} @ {{$parameter["socketPath"]}}',
@@ -97,8 +97,8 @@ export class UnixSocketBridge implements INodeType {
     defaults: {
       name: "Unix Socket Bridge",
     },
-    inputs: [NodeConnectionType.Main],
-    outputs: [NodeConnectionType.Main],
+    inputs: [NodeConnectionTypes.Main],
+    outputs: [NodeConnectionTypes.Main],
     credentials: [
       {
         name: "httpHeaderAuth",
@@ -339,7 +339,7 @@ export class UnixSocketBridge implements INodeType {
           if (credentials && credentials.value) {
             authToken = credentials.value as string;
           }
-        } catch (error) {
+        } catch {
           // Credentials not configured - authentication will be skipped
         }
 
@@ -534,7 +534,7 @@ export class UnixSocketBridge implements INodeType {
           if (credentials && credentials.value) {
             authToken = credentials.value as string;
           }
-        } catch (error) {
+        } catch {
           // Credentials not configured - authentication will be skipped
         }
         

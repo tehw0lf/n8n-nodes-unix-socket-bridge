@@ -136,7 +136,7 @@ export class PythonServerManager {
             console.log("✅ Server is ready and responding to health checks");
             return;
           }
-        } catch (error) {
+        } catch {
           // Continue polling
         }
       }
