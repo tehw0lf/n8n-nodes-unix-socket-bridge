@@ -23,7 +23,6 @@ jobs:
       test: "run pytest"
       build_branch: "run build-dist.py"
       build_main: "run build-dist.py"
-      event_name: ${{ github.event_name }}
       root_dir: "server"
       artifact_path: "dist"
       publish_github_release: "true"
