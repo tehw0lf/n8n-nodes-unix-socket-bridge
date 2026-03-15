@@ -26,4 +26,3 @@ jobs:
       root_dir: "server"
       artifact_path: "dist"
       publish_github_release: "true"
-      publish_python_libraries: "false"
