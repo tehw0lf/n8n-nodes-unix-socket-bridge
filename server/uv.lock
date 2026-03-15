@@ -160,7 +160,7 @@ wheels = [
 
 [[package]]
 name = "server"
-version = "1.4.3"
+version = "1.4.4"
 source = { virtual = "." }
 dependencies = [
     { name = "coverage" },
