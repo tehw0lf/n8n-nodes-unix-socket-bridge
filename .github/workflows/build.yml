@@ -17,6 +17,7 @@ jobs:
       packages: write
       id-token: write
       security-events: write
+      pull-requests: write
     with:
       tool: "npm"
       test: "run test"
@@ -25,3 +26,4 @@ jobs:
       artifact_path: "dist"
       library_path: "dist"
       root_dir: "n8n-node"
+      npm_audit_omit_dev: true
