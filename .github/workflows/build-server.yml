@@ -17,6 +17,7 @@ jobs:
       contents: write
       packages: write
       security-events: write
+      pull-requests: write
     with:
       tool: "uv"
       install: "venv --python 3.12 && uv pip install -r requirements-test.txt"
