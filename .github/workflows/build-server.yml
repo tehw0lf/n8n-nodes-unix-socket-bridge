@@ -26,4 +26,4 @@ jobs:
       build_main: "run build-dist.py"
       root_dir: "server"
       artifact_path: "dist"
-      publish_github_release: "true"
+      publish_github_release: true
