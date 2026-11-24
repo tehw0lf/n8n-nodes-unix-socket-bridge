@@ -21,7 +21,7 @@ jobs:
       issues: write
     with:
       tool: "uv"
-      install: "venv --python 3.12 && uv pip install -r requirements-test.txt"
+      install: "venv &&uv pip install -r requirements-test.txt"
       test: "run pytest"
       build_branch: "run build-dist.py"
       build_main: "run build-dist.py"
